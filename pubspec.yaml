@@ -1,0 +1,58 @@
+name: menudrawer
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # QR Generator
+
+  printing: ^5.11.0
+  pdf: ^3.10.6
+
+  qr_flutter: ^4.1.0
+
+  shared_preferences: ^2.2.3
+
+  image_picker: ^1.2.1
+
+  # QR Scanner compatible con Android, iOS y Web
+  mobile_scanner: ^3.5.7
+
+  # Iconos estilo iOS
+  cupertino_icons: ^1.0.8
+  http: ^0.13.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icono.png"
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - images/dog.jpg
+    - assets/images/2.png
+    - assets/icono.png
+    - assets/images/turbo_backfire.png
+
+  fonts:
+    - family: BBH_Sans_Bartle
+      fonts:
+        - asset: fonts/BBHSansBartle-Regular.ttf
+    - family: BBH_Sans_Bogle
+      fonts:
+        - asset: fonts/BBHSansBogle-Regular.ttf
