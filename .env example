@@ -1,0 +1,22 @@
+PORT=3000
+
+PGUSER=postgres
+PGPASSWORD=TU_PASSWORD_POSTGRES
+PGHOST=localhost
+PGPORT=5432
+PGDATABASE=backfire
+
+# URL pública o local del backend
+APP_URL=http://localhost:3000
+
+# SMTP (solo si se enviarán correos reales)
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USER=tu_correo@gmail.com
+MAIL_PASS=tu_app_password
+MAIL_FROM_NAME=Backfire
+MAIL_FROM_EMAIL=tu_correo@gmail.com
+
+JWT_SECRET=backfire_super_secret_change_this
+JWT_EXPIRES=7d
