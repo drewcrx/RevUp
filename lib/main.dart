@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+
 import 'src/inicio.dart';
 import 'src/perfil.dart';
 import 'src/vehiculos.dart';
@@ -41,7 +42,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Backfire',
+      title: 'RevUp',
       theme: ThemeData(
         scaffoldBackgroundColor: Colors.black,
         primaryColor: const Color(0xFF00A86B),

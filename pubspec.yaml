@@ -2,12 +2,16 @@ name: menudrawer
 description: "A new Flutter project."
 publish_to: 'none'
 
+animate_do: ^4.2.0
+
 version: 1.0.0+1
 
 environment:
   sdk: ^3.9.2
 
 dependencies:
+  http: ^0.13.0
+  
   flutter:
     sdk: flutter
 
@@ -27,11 +31,15 @@ dependencies:
 
   # Iconos estilo iOS
   cupertino_icons: ^1.0.8
-  http: ^0.13.0
+ 
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  integration_test:
+    sdk: flutter
+
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
 
@@ -48,6 +56,8 @@ flutter:
     - assets/images/2.png
     - assets/icono.png
     - assets/images/turbo_backfire.png
+    - assets/images/RevUp.png
+    - assets/images/RevUp2.png
 
   fonts:
     - family: BBH_Sans_Bartle
@@ -56,3 +66,6 @@ flutter:
     - family: BBH_Sans_Bogle
       fonts:
         - asset: fonts/BBHSansBogle-Regular.ttf
+    - family: Ubuntu
+      fonts:
+        - asset: fonts/Ubuntu-Light.ttf
