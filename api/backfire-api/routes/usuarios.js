@@ -44,7 +44,7 @@ function renderSimplePage(title, message, ok = false) {
   <body>
     <div class="card">
       <div class="badge">${ok ? "OK" : "ERROR"}</div>
-      <h1><span class="brand">Backfire</span> — ${title}</h1>
+      <h1><span class="brand">RevUp</span> — ${title}</h1>
       <p>${message}</p>
     </div>
   </body>
@@ -64,7 +64,7 @@ function renderResetPasswordForm(token, error = "") {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Backfire — Cambiar contraseña</title>
+    <title>RevUp — Cambiar contraseña</title>
     <style>
       body{margin:0;font-family:Arial;background:#0b0b0b;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center}
       .card{width:min(560px,92vw);background:#111;border:1px solid #1f2937;border-radius:16px;padding:22px}
@@ -79,7 +79,7 @@ function renderResetPasswordForm(token, error = "") {
   </head>
   <body>
     <div class="card">
-      <h1><span class="brand">Backfire</span> — Cambiar contraseña</h1>
+      <h1><span class="brand">RevUp</span> — Cambiar contraseña</h1>
       <p>Ingresa tu nueva contraseña.</p>
 
       ${errHtml}
@@ -134,11 +134,11 @@ router.post("/register", async (req, res) => {
 
     await sendMail({
       to: correo,
-      subject: "Activa tu cuenta - Backfire",
+      subject: "Activa tu cuenta - RevUp",
       text: `Activa tu cuenta aquí: ${verifyLink}`,
       html: baseTemplate({
         title: "Activa tu cuenta",
-        subtitle: "Confirma tu correo para empezar a usar Backfire.",
+        subtitle: "Confirma tu correo para empezar a usar RevUp.",
         buttonText: "Activar cuenta",
         buttonUrl: verifyLink,
       }),
@@ -279,10 +279,10 @@ router.post("/resend-verification", async (req, res) => {
 
     await sendMail({
       to: u.correo,
-      subject: "Activa tu cuenta - Backfire",
+      subject: "Activa tu cuenta - RevUp",
       html: baseTemplate({
         title: "Reenvío de activación",
-        subtitle: "Confirma tu correo para activar tu cuenta y empezar a usar Backfire.",
+        subtitle: "Confirma tu correo para activar tu cuenta y empezar a usar RevUp.",
         buttonText: "Activar cuenta",
         buttonUrl: link,
       }),
@@ -323,7 +323,7 @@ router.post("/forgot-password", async (req, res) => {
 
       await sendMail({
         to: email,
-        subject: "Recupera tu contraseña - Backfire",
+        subject: "Recupera tu contraseña - RevUp",
         html: baseTemplate({
           title: "Recuperar contraseña",
           subtitle: "Haz clic para crear una nueva contraseña.",
@@ -445,7 +445,7 @@ router.post("/forgot-username", async (req, res) => {
     if (q.rowCount > 0) {
       await sendMail({
         to: email,
-        subject: "Tu usuario - Backfire",
+        subject: "Tu usuario - RevUp",
         html: baseTemplate({
           title: "Recuperar usuario",
           subtitle: `Tu usuario es: <b>${q.rows[0].usuario}</b>`,

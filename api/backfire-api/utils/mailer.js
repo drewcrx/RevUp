@@ -34,7 +34,7 @@ export async function sendMail({ to, subject, html, text }) {
     return { skipped: true };
   }
 
-  const fromName = process.env.MAIL_FROM_NAME || "Backfire";
+  const fromName = process.env.MAIL_FROM_NAME || "RevUp";
   const fromEmail = process.env.MAIL_FROM_EMAIL || process.env.MAIL_USER;
 
   const info = await transporter.sendMail({
