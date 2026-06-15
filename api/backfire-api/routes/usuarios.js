@@ -23,64 +23,283 @@ function createTokenPair() {
   return { token, tokenHash };
 }
 
+// ─── Paleta RevUp ─────────────────────────────────────────────────────────────
+const kBg      = "#04060D";
+const kCard    = "#080E1A";
+const kBlue    = "#1E90FF";
+const kWhite   = "#F0F4FF";
+const kBorder  = "rgba(30,144,255,0.18)";
+
 function renderSimplePage(title, message, ok = false) {
-  const color = ok ? "#16a34a" : "#ef4444";
-  return `
-  <!doctype html>
-  <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${title}</title>
-    <style>
-      body{margin:0;font-family:Arial;background:#0b0b0b;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center}
-      .card{width:min(560px,92vw);background:#111;border:1px solid #1f2937;border-radius:16px;padding:22px}
-      .badge{display:inline-block;padding:6px 10px;border-radius:999px;background:${color};font-weight:700}
-      h1{margin:14px 0 8px 0;font-size:22px}
-      p{margin:0;color:#cbd5e1}
-      .brand{color:#22c55e;font-weight:800}
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <div class="badge">${ok ? "OK" : "ERROR"}</div>
-      <h1><span class="brand">RevUp</span> — ${title}</h1>
-      <p>${message}</p>
+  const accentColor = ok ? "#22C55E" : "#EF4444";
+  const badgeLabel  = ok ? "OK" : "ERROR";
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RevUp — ${title}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: ${kBg};
+      color: ${kWhite};
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: min(520px, 100%);
+      background: ${kCard};
+      border: 1px solid ${kBorder};
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    /* Header */
+    .card-header {
+      background: linear-gradient(135deg, #0A1628 0%, #060B18 100%);
+      border-bottom: 1px solid rgba(30,144,255,0.20);
+      padding: 14px 22px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      background: ${kBlue};
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .wordmark {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: ${kWhite};
+    }
+    .tagline {
+      font-size: 10px;
+      color: rgba(30,144,255,0.60);
+      letter-spacing: 1.2px;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    /* Body */
+    .card-body {
+      padding: 28px 24px 26px;
+      text-align: center;
+    }
+    /* Badge */
+    .badge {
+      display: inline-block;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #fff;
+      background: ${accentColor};
+      box-shadow: 0 2px 12px ${accentColor}55;
+      margin-bottom: 18px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: ${kWhite};
+      margin-bottom: 8px;
+      letter-spacing: 0.2px;
+    }
+    h1 .brand {
+      color: ${kBlue};
+    }
+    .message {
+      font-size: 14px;
+      color: rgba(240,244,255,0.50);
+      line-height: 1.6;
+    }
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(30,144,255,0.18), transparent);
+      margin: 22px 0;
+    }
+    /* Footer */
+    .card-footer {
+      padding: 12px 22px;
+      border-top: 1px solid rgba(30,144,255,0.08);
+      background: #060B18;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer-copy { font-size: 10px; color: rgba(240,244,255,0.18); }
+    .footer-brand { font-size: 10px; color: rgba(30,144,255,0.35); font-weight: 600; letter-spacing: 0.5px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <div class="dot"></div>
+      <span class="wordmark">REVUP</span>
+      <span class="tagline">MÁS CONTROL. MÁS RENDIMIENTO.</span>
     </div>
-  </body>
-  </html>`;
+    <div class="card-body">
+      <div class="badge">${badgeLabel}</div>
+      <h1><span class="brand">RevUp</span> — ${title}</h1>
+      <div class="divider"></div>
+      <p class="message">${message}</p>
+    </div>
+    <div class="card-footer">
+      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Taller Inteligente</span>
+      <span class="footer-brand">revup.app</span>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 function renderResetPasswordForm(token, error = "") {
   const errHtml = error
-    ? `<div style="margin:10px 0;padding:10px;border-radius:12px;border:1px solid #ef4444;color:#fecaca;background:#2a0f0f">
-         ${error}
-       </div>`
+    ? `<div class="error-box">${error}</div>`
     : "";
 
-  return `
-  <!doctype html>
-  <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>RevUp — Cambiar contraseña</title>
-    <style>
-      body{margin:0;font-family:Arial;background:#0b0b0b;color:#fff;display:flex;min-height:100vh;align-items:center;justify-content:center}
-      .card{width:min(560px,92vw);background:#111;border:1px solid #1f2937;border-radius:16px;padding:22px}
-      h1{margin:10px 0 6px 0;font-size:22px}
-      p{margin:0 0 14px 0;color:#cbd5e1}
-      label{display:block;margin:10px 0 6px 0;color:#cbd5e1;font-weight:700}
-      input{width:100%;padding:12px;border-radius:12px;border:1px solid #334155;background:#0b0b0b;color:#fff;outline:none}
-      button{margin-top:14px;width:100%;padding:12px;border-radius:12px;border:0;background:#22c55e;color:#0b0b0b;font-weight:900;cursor:pointer}
-      .brand{color:#22c55e;font-weight:800}
-      .small{margin-top:10px;color:#94a3b8;font-size:12px}
-    </style>
-  </head>
-  <body>
-    <div class="card">
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RevUp — Cambiar contraseña</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: ${kBg};
+      color: ${kWhite};
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: min(520px, 100%);
+      background: ${kCard};
+      border: 1px solid ${kBorder};
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    /* Header */
+    .card-header {
+      background: linear-gradient(135deg, #0A1628 0%, #060B18 100%);
+      border-bottom: 1px solid rgba(30,144,255,0.20);
+      padding: 14px 22px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .dot { width: 8px; height: 8px; background: ${kBlue}; border-radius: 50%; flex-shrink: 0; }
+    .wordmark { font-size: 12px; font-weight: 800; letter-spacing: 3px; color: ${kWhite}; }
+    .tagline { font-size: 10px; color: rgba(30,144,255,0.60); letter-spacing: 1.2px; font-weight: 600; margin-left: 4px; }
+    /* Body */
+    .card-body { padding: 26px 24px 28px; }
+    h1 { font-size: 19px; font-weight: 800; color: ${kWhite}; margin-bottom: 6px; }
+    h1 .brand { color: ${kBlue}; }
+    .subtitle { font-size: 13px; color: rgba(240,244,255,0.45); margin-bottom: 22px; line-height: 1.5; }
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(30,144,255,0.14), transparent);
+      margin: 18px 0;
+    }
+    /* Error */
+    .error-box {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(239,68,68,0.35);
+      background: rgba(239,68,68,0.07);
+      color: #FCA5A5;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    /* Labels & inputs */
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(240,244,255,0.55);
+      margin-bottom: 6px;
+      letter-spacing: 0.3px;
+    }
+    input[type="password"] {
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(30,144,255,0.22);
+      background: rgba(30,144,255,0.05);
+      color: ${kWhite};
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 14px;
+    }
+    input[type="password"]:focus {
+      border-color: ${kBlue};
+    }
+    input[type="hidden"] {}
+    /* Button */
+    button[type="submit"] {
+      margin-top: 6px;
+      width: 100%;
+      padding: 14px;
+      border-radius: 10px;
+      border: 0;
+      background: linear-gradient(135deg, #2AA0FF 0%, #0A5FCC 100%);
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 1.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(30,144,255,0.35);
+      transition: opacity 0.2s;
+    }
+    button[type="submit"]:hover { opacity: 0.88; }
+    /* Note */
+    .note {
+      margin-top: 16px;
+      font-size: 11px;
+      color: rgba(240,244,255,0.22);
+      line-height: 1.5;
+      text-align: center;
+    }
+    /* Footer */
+    .card-footer {
+      padding: 12px 22px;
+      border-top: 1px solid rgba(30,144,255,0.08);
+      background: #060B18;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer-copy { font-size: 10px; color: rgba(240,244,255,0.18); }
+    .footer-brand { font-size: 10px; color: rgba(30,144,255,0.35); font-weight: 600; letter-spacing: 0.5px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-header">
+      <div class="dot"></div>
+      <span class="wordmark">REVUP</span>
+      <span class="tagline">MÁS CONTROL. MÁS RENDIMIENTO.</span>
+    </div>
+    <div class="card-body">
       <h1><span class="brand">RevUp</span> — Cambiar contraseña</h1>
-      <p>Ingresa tu nueva contraseña.</p>
+      <p class="subtitle">Ingresa tu nueva contraseña a continuación.</p>
+
+      <div class="divider"></div>
 
       ${errHtml}
 
@@ -88,18 +307,23 @@ function renderResetPasswordForm(token, error = "") {
         <input type="hidden" name="token" value="${token || ""}" />
 
         <label>Nueva contraseña</label>
-        <input type="password" name="password" minlength="6" required />
+        <input type="password" name="password" minlength="6" required placeholder="Mínimo 6 caracteres" />
 
         <label>Confirmar contraseña</label>
-        <input type="password" name="password2" minlength="6" required />
+        <input type="password" name="password2" minlength="6" required placeholder="Repite la contraseña" />
 
-        <button type="submit">Guardar contraseña</button>
+        <button type="submit">GUARDAR CONTRASEÑA</button>
       </form>
 
-      <div class="small">Si el enlace expiró, vuelve a solicitar la recuperación.</div>
+      <p class="note">Si el enlace expiró, vuelve a solicitar la recuperación desde la app.</p>
     </div>
-  </body>
-  </html>`;
+    <div class="card-footer">
+      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Taller Inteligente</span>
+      <span class="footer-brand">revup.app</span>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 //
@@ -177,7 +401,7 @@ router.get("/verify", async (req, res) => {
     }
 
     if (!u.verificacion_expires || new Date(u.verificacion_expires) < new Date()) {
-      return res.send(renderSimplePage("Error", "Enlace expirado"));
+      return res.send(renderSimplePage("Enlace expirado", "Solicita un nuevo enlace de activación desde la app."));
     }
 
     await pool.query(
@@ -242,8 +466,7 @@ router.post("/login", async (req, res) => {
 });
 
 // =========================
-// Reenviar verificación (por correo)
-// (responde genérico por seguridad)
+// Reenviar verificación
 // =========================
 router.post("/resend-verification", async (req, res) => {
   const { correo } = req.body || {};
@@ -297,13 +520,12 @@ router.post("/resend-verification", async (req, res) => {
 //
 // =========================
 // FORGOT PASSWORD
-// (responde genérico por seguridad)
 // =========================
+//
 router.post("/forgot-password", async (req, res) => {
   const { correo } = req.body || {};
   const email = (correo || "").trim();
 
-  // Respuesta genérica SIEMPRE
   const generic = { mensaje: "Si existe el correo, se enviará un enlace." };
   if (!email) return res.json(generic);
 
@@ -340,8 +562,7 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 // =========================
-// RESET PASSWORD (HTML)
-// GET /usuarios/reset-password?token=...
+// RESET PASSWORD — GET
 // =========================
 router.get("/reset-password", async (req, res) => {
   const token = (req.query?.token || "").toString().trim();
@@ -362,7 +583,7 @@ router.get("/reset-password", async (req, res) => {
     const u = q.rows[0];
 
     if (!u.reset_expires || new Date(u.reset_expires) < new Date()) {
-      return res.status(400).send(renderSimplePage("Error", "Enlace expirado"));
+      return res.status(400).send(renderSimplePage("Enlace expirado", "Solicita un nuevo enlace desde la app."));
     }
 
     return res.send(renderResetPasswordForm(token));
@@ -372,22 +593,23 @@ router.get("/reset-password", async (req, res) => {
 });
 
 // =========================
-// RESET PASSWORD (POST)
-// POST /usuarios/reset-password  (token + password)
+// RESET PASSWORD — POST
 // =========================
 router.post("/reset-password", async (req, res) => {
-  const token = (req.body?.token || "").toString().trim();
-  const password = (req.body?.password || "").toString();
+  const token     = (req.body?.token     || "").toString().trim();
+  const password  = (req.body?.password  || "").toString();
   const password2 = (req.body?.password2 || "").toString();
 
   if (!token) return res.status(400).send(renderSimplePage("Error", "Token inválido"));
   if (!password || password.length < 6) {
-    return res
-      .status(400)
-      .send(renderResetPasswordForm(token, "La contraseña debe tener mínimo 6 caracteres."));
+    return res.status(400).send(
+      renderResetPasswordForm(token, "La contraseña debe tener mínimo 6 caracteres.")
+    );
   }
   if (password !== password2) {
-    return res.status(400).send(renderResetPasswordForm(token, "Las contraseñas no coinciden."));
+    return res.status(400).send(
+      renderResetPasswordForm(token, "Las contraseñas no coinciden.")
+    );
   }
 
   try {
@@ -405,7 +627,7 @@ router.post("/reset-password", async (req, res) => {
     const u = q.rows[0];
 
     if (!u.reset_expires || new Date(u.reset_expires) < new Date()) {
-      return res.status(400).send(renderSimplePage("Error", "Enlace expirado"));
+      return res.status(400).send(renderSimplePage("Enlace expirado", "Solicita un nuevo enlace desde la app."));
     }
 
     const hash = await bcrypt.hash(password, 10);
@@ -430,8 +652,8 @@ router.post("/reset-password", async (req, res) => {
 //
 // =========================
 // FORGOT USERNAME
-// (responde genérico por seguridad)
 // =========================
+//
 router.post("/forgot-username", async (req, res) => {
   const { correo } = req.body || {};
   const email = (correo || "").trim();
@@ -448,7 +670,7 @@ router.post("/forgot-username", async (req, res) => {
         subject: "Tu usuario - RevUp",
         html: baseTemplate({
           title: "Recuperar usuario",
-          subtitle: `Tu usuario es: <b>${q.rows[0].usuario}</b>`,
+          subtitle: `Tu nombre de usuario es: <b style="color:#F0F4FF;">${q.rows[0].usuario}</b>`,
           buttonText: "Iniciar sesión",
           buttonUrl: appUrl(),
         }),
