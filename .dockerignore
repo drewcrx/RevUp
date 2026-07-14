@@ -1,0 +1,9 @@
+build/*
+!build/web
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+node_modules/
+api/revup-api/node_modules/
+*.log
+.env
