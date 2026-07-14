@@ -1,12 +1,9 @@
 import pg from "pg";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 export const pool = new pg.Pool({
-user: "Andrew",
-password: "235727",
-host: "localhost",
-port: "5432",
-database: "revup",
+  user:     process.env.PGUSER,
+  password: process.env.PGPASSWORD,
+  host:     process.env.PGHOST     || "localhost",
+  port:     Number(process.env.PGPORT) || 5432,
+  database: process.env.PGDATABASE,
 });

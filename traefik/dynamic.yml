@@ -1,0 +1,50 @@
+http:
+  routers:
+    frontend:
+      rule: "Host(`revup.byronrm.com`)"
+      entryPoints: [websecure]
+      service: frontend
+      tls:
+        certResolver: letsencrypt
+
+    backend:
+      rule: "Host(`backrevup.byronrm.com`)"
+      entryPoints: [websecure]
+      service: backend
+      tls:
+        certResolver: letsencrypt
+
+    portainer:
+      rule: "Host(`portainerrevup.byronrm.com`)"
+      entryPoints: [websecure]
+      service: portainer
+      tls:
+        certResolver: letsencrypt
+
+    adminer:
+      rule: "Host(`pgrevup.byronrm.com`)"
+      entryPoints: [websecure]
+      service: adminer
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:80"
+
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:3000"
+
+    portainer:
+      loadBalancer:
+        servers:
+          - url: "http://portainer:9000"
+
+    adminer:
+      loadBalancer:
+        servers:
+          - url: "http://adminer:8080"

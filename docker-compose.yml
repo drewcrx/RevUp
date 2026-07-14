@@ -2,12 +2,12 @@ services:
 
   # ── Traefik – proxy inverso y SSL automático ──────────────────────────────
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.3
     restart: unless-stopped
     command:
       - --api.dashboard=true
-      - --providers.docker=true
-      - --providers.docker.exposedbydefault=false
+      - --providers.file.filename=/config/dynamic.yml
+      - --providers.file.watch=true
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
@@ -19,8 +19,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
+      - ./traefik/dynamic.yml:/config/dynamic.yml:ro
     networks:
       - proxy
 
@@ -31,12 +31,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.portainer.rule=Host(`portainerrevup.byronrm.com`)
-      - traefik.http.routers.portainer.entrypoints=websecure
-      - traefik.http.routers.portainer.tls.certresolver=letsencrypt
-      - traefik.http.services.portainer.loadbalancer.server.port=9000
     networks:
       - proxy
 
@@ -59,12 +53,6 @@ services:
     restart: unless-stopped
     environment:
       ADMINER_DEFAULT_SERVER: db
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.adminer.rule=Host(`pgrevup.byronrm.com`)
-      - traefik.http.routers.adminer.entrypoints=websecure
-      - traefik.http.routers.adminer.tls.certresolver=letsencrypt
-      - traefik.http.services.adminer.loadbalancer.server.port=8080
     networks:
       - proxy
       - backend
@@ -95,12 +83,6 @@ services:
       MAIL_FROM_EMAIL: ${MAIL_USER}
     depends_on:
       - db
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.backend.rule=Host(`backrevup.byronrm.com`)
-      - traefik.http.routers.backend.entrypoints=websecure
-      - traefik.http.routers.backend.tls.certresolver=letsencrypt
-      - traefik.http.services.backend.loadbalancer.server.port=3000
     networks:
       - proxy
       - backend
@@ -112,12 +94,6 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.frontend.rule=Host(`revup.byronrm.com`)
-      - traefik.http.routers.frontend.entrypoints=websecure
-      - traefik.http.routers.frontend.tls.certresolver=letsencrypt
-      - traefik.http.services.frontend.loadbalancer.server.port=80
     networks:
       - proxy
 
