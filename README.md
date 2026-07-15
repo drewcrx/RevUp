@@ -151,7 +151,6 @@ portainerrevup.byronrm.com A  169.58.20.41
 pgrevup.byronrm.com        A  169.58.20.41
 ```
 
-## Integrantes
+---
 
-- Andrew Carrera
-- Larissa Guamán
+Desarrollado por **Andrew Carrera**
