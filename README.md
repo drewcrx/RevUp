@@ -1,308 +1,157 @@
-# RevUp
+# RevUp — Gestión de Taller Automotriz
 
-**RevUp** es una aplicación desarrollada en Flutter para la gestión digital de vehículos en talleres mecánicos. El proyecto busca facilitar el registro, consulta y seguimiento de información vehicular mediante una solución moderna conectada a un backend y una base de datos.
+Aplicación web completa para la gestión digital de vehículos en talleres mecánicos. Permite registrar vehículos, crear órdenes de trabajo, gestionar repuestos y servicios, y generar reportes. Desplegada en VPS con Docker, Traefik y CI/CD automatizado.
 
-Su propósito principal es reducir el uso de documentación física en talleres, mejorar la organización del historial de los vehículos y agilizar el trabajo de administradores y mecánicos.
+## URLs de los servicios
 
----
+| Servicio | URL | Descripción |
+|---|---|---|
+| **Frontend** | https://revup.byronrm.com | Aplicación Flutter Web |
+| **Backend API** | https://backrevup.byronrm.com | API REST Node.js/Express |
+| **Portainer** | https://portainerrevup.byronrm.com | Gestión visual de contenedores |
+| **Adminer** | https://pgrevup.byronrm.com | Administrador gráfico PostgreSQL |
 
-## Descripción del proyecto
+## Stack tecnológico
 
-RevUp permite administrar información relacionada con vehículos, usuarios, órdenes de trabajo, reportes y procesos internos de un taller mecánico.
+- **Frontend**: Flutter Web → compilado a HTML/JS estático, servido por nginx
+- **Backend**: Node.js + Express → API REST con JWT
+- **Base de datos**: PostgreSQL 16
+- **Proxy inverso**: Traefik v3.3 → SSL automático con Let's Encrypt
+- **Gestión de contenedores**: Portainer CE
+- **Admin DB**: Adminer
+- **Infraestructura**: VPS Contabo Ubuntu 22.04 · `169.58.20.41`
+- **CI/CD**: GitHub Actions → GHCR → SSH deploy
 
-La aplicación está pensada para que el taller pueda consultar datos importantes de cada vehículo, como información general, mantenimientos realizados, kilometraje, órdenes asociadas y registros relevantes para el seguimiento del servicio.
+## Arquitectura
 
----
-
-## Problema que resuelve
-
-En muchos talleres mecánicos, la información de los vehículos todavía se maneja mediante hojas físicas, cuadernos o documentos impresos. Esto puede provocar pérdida de información, desorganización, demoras en la atención y dificultad para consultar trabajos anteriores.
-
-RevUp propone una solución digital que centraliza la información del taller y permite acceder a los datos de forma rápida, ordenada y segura.
-
----
-
-## Objetivo general
-
-Desarrollar una aplicación para la gestión digital de vehículos en talleres mecánicos, permitiendo registrar, consultar y actualizar información relacionada con usuarios, vehículos, órdenes de trabajo y reportes.
-
----
-
-## Objetivos específicos
-
-* Registrar y gestionar usuarios del sistema.
-* Registrar información de vehículos.
-* Consultar datos asociados a cada vehículo.
-* Gestionar órdenes de trabajo.
-* Generar y consultar reportes.
-* Organizar la información del taller de forma digital.
-* Reducir la dependencia de documentos físicos.
-* Agilizar los procesos internos del taller mecánico.
-
----
-
-## Funcionalidades principales
-
-* Inicio de sesión de usuarios.
-* Registro de usuarios.
-* Gestión de vehículos.
-* Consulta de información vehicular.
-* Gestión de órdenes de trabajo.
-* Generación de reportes.
-* Conexión con backend.
-* Integración con base de datos.
-* Interfaz desarrollada en Flutter.
-* Soporte para múltiples plataformas mediante Flutter.
-
----
-
-## Tecnologías utilizadas
-
-### Frontend
-
-* Flutter
-* Dart
-
-### Backend
-
-* Node.js
-* Express.js
-
-### Base de datos
-
-* PostgreSQL
-
-### Dependencias principales
-
-* http
-* shared_preferences
-* image_picker
-* qr_flutter
-* mobile_scanner
-* pdf
-* printing
-* bcrypt
-* cors
-* dotenv
-* express
-* jsonwebtoken
-* nodemailer
-* pg
-
----
-
-## Estructura del proyecto
-
-```txt
-RevUp/
-│
-├── android/
-├── ios/
-├── lib/
-│   ├── main.dart
-│   └── src/
-│
-├── web/
-├── windows/
-├── linux/
-├── macos/
-│
-├── assets/
-├── fonts/
-├── images/
-│
-├── api/
-│   └── backfire-api/
-│       ├── db/
-│       ├── routes/
-│       ├── src/
-│       │   └── middleware/
-│       ├── utils/
-│       ├── server.js
-│       └── package.json
-│
-├── pubspec.yaml
-├── package.json
-├── README.md
-└── .gitignore
+```
+Internet (HTTPS)
+      │
+      ▼
+ Traefik v3.3  ──── :80 redirige a :443 ──── Let's Encrypt SSL
+      │
+      ├── revup.byronrm.com          → Frontend  (nginx:alpine   :80)
+      ├── backrevup.byronrm.com      → Backend   (node:20-alpine :3000)
+      ├── portainerrevup.byronrm.com → Portainer (portainer-ce   :9000)
+      └── pgrevup.byronrm.com        → Adminer   (adminer        :8080)
+                                              │
+                              Red backend     │
+                              ┌───────────────┘
+                              ▼
+                         PostgreSQL 16 (:5432)
+                         DB: revup
 ```
 
-> Nota: aunque la carpeta del backend conserve el nombre `backfire-api`, el nombre oficial del proyecto es **RevUp**.
+### Redes Docker
 
----
+| Red | Servicios |
+|---|---|
+| `proxy` | Traefik, Frontend, Backend, Portainer, Adminer |
+| `backend` | Backend, Adminer, PostgreSQL |
 
-## Instalación del proyecto
+PostgreSQL **no está expuesto** a la red `proxy` — solo accesible internamente desde Backend y Adminer.
 
-Clonar el repositorio:
+## Esquema de la base de datos
+
+| Tabla | Descripción |
+|---|---|
+| `usuarios` | Registro, login, verificación de correo, roles |
+| `vehiculos` | Vehículos registrados por mecánico |
+| `vehiculo_qr` | Tokens QR por vehículo |
+| `arreglos` | Historial de reparaciones por vehículo |
+| `ordenes_trabajo` | Órdenes de trabajo (OT) |
+| `orden_servicios` | Servicios facturados dentro de una OT |
+| `orden_repuestos` | Repuestos usados dentro de una OT |
+| `orden_pagos` | Pagos registrados en una OT |
+
+## CI/CD — GitHub Actions
+
+El pipeline se activa automáticamente en cada `push` a la rama `main`:
+
+```
+git push → main
+    │
+    ├── 1. flutter pub get + flutter build web --release
+    ├── 2. docker build frontend (nginx + build/web) → push ghcr.io/drewcrx/revup-frontend:latest
+    ├── 3. docker build backend (node:20-alpine)     → push ghcr.io/drewcrx/revup-backend:latest
+    └── 4. SSH al VPS → docker compose pull && docker compose up -d --remove-orphans
+```
+
+### Secrets requeridos en GitHub
+
+| Secret | Descripción |
+|---|---|
+| `VPS_HOST` | IP del VPS |
+| `VPS_USER` | Usuario SSH |
+| `VPS_PASSWORD` | Contraseña SSH del VPS |
+
+## Primer despliegue manual
 
 ```bash
-git clone https://github.com/drewcrx/RevUp.git
+# 1. Instalar Docker en el VPS
+curl -fsSL https://get.docker.com | sh
+
+# 2. Clonar el repositorio
+git clone https://github.com/drewcrx/RevUp.git /opt/revup
+cd /opt/revup
+
+# 3. Crear variables de entorno
+cp .env.example .env
+nano .env   # completar con valores reales
+
+# 4. Levantar todos los servicios
+docker compose up -d --build
+
+# 5. Verificar estado
+docker compose ps
 ```
 
-Entrar a la carpeta del proyecto:
-
-```bash
-cd RevUp
-```
-
----
-
-## Ejecución del frontend
-
-Instalar las dependencias de Flutter:
-
-```bash
-flutter pub get
-```
-
-Ejecutar la aplicación:
-
-```bash
-flutter run
-```
-
-Para ejecutar en navegador:
-
-```bash
-flutter run -d chrome
-```
-
----
-
-## Ejecución del backend
-
-Entrar a la carpeta del backend:
-
-```bash
-cd api/backfire-api
-```
-
-Instalar dependencias:
-
-```bash
-npm install
-```
-
-Ejecutar el servidor en modo desarrollo:
-
-```bash
-npm run dev
-```
-
-O ejecutar en modo normal:
-
-```bash
-npm start
-```
-
-Por defecto, el backend se ejecuta en:
-
-```txt
-http://localhost:3000
-```
-
----
-
-## Endpoints principales del backend
-
-El backend cuenta con rutas principales para:
-
-```txt
-/health
-/vehiculos
-/usuarios
-/ordenes
-/reportes
-```
-
-La ruta de prueba del servidor es:
-
-```txt
-GET /health
-```
-
----
-
-## Variables de entorno
-
-El backend utiliza variables de entorno para configurar datos sensibles como el puerto, conexión a base de datos y claves privadas.
-
-Crear un archivo `.env` dentro de:
-
-```txt
-api/backfire-api/
-```
-
-Ejemplo:
+## Variables de entorno (.env)
 
 ```env
-PORT=3000
+ACME_EMAIL=tu@email.com       # Email para certificados Let's Encrypt
 
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=tu_password
-DB_NAME=revup
+PGUSER=usuario_db
+PGPASSWORD=contraseña_db
+PGDATABASE=revup
 
-JWT_SECRET=tu_clave_secreta
+JWT_SECRET=cadena_secreta_larga
+
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USER=tu@gmail.com
+MAIL_PASS=app_password_gmail
 ```
 
-> Importante: el archivo `.env` no debe subirse al repositorio.
+## Comandos útiles
 
----
+```bash
+# Ver estado de contenedores
+docker compose ps
 
-## Base de datos
+# Ver logs de un servicio
+docker compose logs backend -f --tail=50
 
-El proyecto utiliza PostgreSQL como sistema de base de datos.
+# Actualización manual
+docker compose pull && docker compose up -d --remove-orphans
 
-Crear la base de datos:
-
-```sql
-CREATE DATABASE revup;
+# Limpiar imágenes antiguas
+docker image prune -f
 ```
 
-Luego configurar las credenciales correspondientes en el archivo `.env` del backend.
+## Registros DNS
 
----
+4 registros tipo A en el proveedor DNS del dominio:
 
-## Flujo general del sistema
-
-1. El usuario inicia sesión en la aplicación.
-2. El sistema valida sus credenciales.
-3. El usuario accede a las funcionalidades disponibles.
-4. Se registra o consulta información de vehículos.
-5. Se gestionan órdenes de trabajo y reportes.
-6. La información queda almacenada en la base de datos.
-
----
-
-## Roles principales
-
-### Administrador
-
-Usuario encargado de gestionar información general del sistema, usuarios, vehículos, órdenes y reportes del taller.
-
-### Mecánico
-
-Usuario encargado de consultar información vehicular y registrar datos relacionados con los trabajos realizados.
-
----
-
-## Estado del proyecto
-
-Proyecto en desarrollo, orientado a la digitalización de procesos en talleres mecánicos mediante una aplicación móvil/frontend conectada a un backend.
-
----
-
-## Autor
-
-**Andrew Carrera**
-Estudiante de Desarrollo de Software
-
----
-
-## Repositorio
-
-```txt
-https://github.com/drewcrx/RevUp.git
 ```
+revup.byronrm.com          A  169.58.20.41
+backrevup.byronrm.com      A  169.58.20.41
+portainerrevup.byronrm.com A  169.58.20.41
+pgrevup.byronrm.com        A  169.58.20.41
+```
+
+## Integrantes
+
+- Andrew Carrera
+- Larissa Guamán
