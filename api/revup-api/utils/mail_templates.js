@@ -145,7 +145,7 @@ export function baseTemplate({ title, subtitle, buttonText, buttonUrl, note }) {
                     <td>
                       <span style="font-size:10px; color:rgba(240,244,255,0.18);
                                     letter-spacing:0.3px;">
-                        © ${new Date().getFullYear()} RevUp · Taller Inteligente
+                        © ${new Date().getFullYear()} RevUp · Andrew Carrera
                       </span>
                     </td>
                     <td align="right">

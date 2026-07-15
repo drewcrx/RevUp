@@ -153,7 +153,7 @@ function renderSimplePage(title, message, ok = false) {
       <p class="message">${message}</p>
     </div>
     <div class="card-footer">
-      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Taller Inteligente</span>
+      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Andrew Carrera</span>
       <span class="footer-brand">revup.app</span>
     </div>
   </div>
@@ -318,7 +318,7 @@ function renderResetPasswordForm(token, error = "") {
       <p class="note">Si el enlace expiró, vuelve a solicitar la recuperación desde la app.</p>
     </div>
     <div class="card-footer">
-      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Taller Inteligente</span>
+      <span class="footer-copy">© ${new Date().getFullYear()} RevUp · Andrew Carrera</span>
       <span class="footer-brand">revup.app</span>
     </div>
   </div>

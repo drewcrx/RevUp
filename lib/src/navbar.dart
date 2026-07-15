@@ -227,6 +227,17 @@ class _NavbarState extends State<Navbar> {
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    "© ${DateTime.now().year} Andrew Carrera",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: 'Ubuntu', fontSize: 10,
+                      color: Colors.white24, letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
               ]),
             ),
 
