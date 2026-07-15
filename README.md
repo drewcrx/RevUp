@@ -22,24 +22,43 @@ Aplicación web completa para la gestión digital de vehículos en talleres mec�
 - **Infraestructura**: VPS Contabo Ubuntu 22.04 · `169.58.20.41`
 - **CI/CD**: GitHub Actions → GHCR → SSH deploy
 
-## Arquitectura
+## Diagrama de arquitectura
 
-```
-Internet (HTTPS)
-      │
-      ▼
- Traefik v3.3  ──── :80 redirige a :443 ──── Let's Encrypt SSL
-      │
-      ├── revup.byronrm.com          → Frontend  (nginx:alpine   :80)
-      ├── backrevup.byronrm.com      → Backend   (node:20-alpine :3000)
-      ├── portainerrevup.byronrm.com → Portainer (portainer-ce   :9000)
-      └── pgrevup.byronrm.com        → Adminer   (adminer        :8080)
-                                              │
-                              Red backend     │
-                              ┌───────────────┘
-                              ▼
-                         PostgreSQL 16 (:5432)
-                         DB: revup
+```mermaid
+graph TD
+    Internet(["🌐 Internet<br/>HTTPS"])
+
+    subgraph VPS["☁️ VPS Contabo · 169.58.20.41 · Ubuntu 22.04"]
+        direction TB
+
+        Traefik["⚡ Traefik v3.3<br/>Proxy Inverso<br/>:80 → :443 · Let's Encrypt SSL"]
+
+        subgraph proxy_net["Red: proxy"]
+            Frontend["🌐 Frontend<br/>Flutter Web · nginx:alpine<br/>revup.byronrm.com · :80"]
+            Backend["⚙️ Backend<br/>Node.js · Express API<br/>backrevup.byronrm.com · :3000"]
+            Portainer["🐳 Portainer CE<br/>Gestión Docker<br/>portainerrevup.byronrm.com · :9000"]
+            Adminer["🗄️ Adminer<br/>Admin PostgreSQL<br/>pgrevup.byronrm.com · :8080"]
+        end
+
+        subgraph backend_net["Red: backend"]
+            PostgreSQL[("🐘 PostgreSQL 16<br/>postgres:16-alpine<br/>:5432 · DB: revup")]
+        end
+    end
+
+    subgraph CICD["⚡ CI/CD · GitHub Actions"]
+        Push["git push → main"] --> BuildFlutter["flutter build web"]
+        BuildFlutter --> BuildImages["docker build<br/>frontend + backend"]
+        BuildImages --> GHCR["Push → GHCR<br/>ghcr.io/drewcrx/"]
+        GHCR --> Deploy["SSH → VPS<br/>docker compose up -d"]
+    end
+
+    Internet -->|HTTPS| Traefik
+    Traefik -->|revup.byronrm.com| Frontend
+    Traefik -->|backrevup.byronrm.com| Backend
+    Traefik -->|portainerrevup.byronrm.com| Portainer
+    Traefik -->|pgrevup.byronrm.com| Adminer
+    Backend -->|PGHOST=db :5432| PostgreSQL
+    Adminer -->|PGHOST=db :5432| PostgreSQL
 ```
 
 ### Redes Docker
