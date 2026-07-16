@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'api_service.dart';
+import 'password_utils.dart';
 
 // ─── Painter: velocímetro + líneas de velocidad (compartido) ─────────────────
 class RacingBackgroundPainter extends CustomPainter {
@@ -214,8 +215,9 @@ class _RegisterPageState extends State<RegisterPage>
     if (usuario.length < 3) {
       snack('El usuario debe tener al menos 3 caracteres'); return;
     }
-    if (password.length < 6) {
-      snack('La contraseña debe tener al menos 6 caracteres'); return;
+    final errorPassword = validarPasswordFuerte(password);
+    if (errorPassword != null) {
+      snack(errorPassword); return;
     }
     if (password != confirm) {
       snack('Las contraseñas no coinciden'); return;
@@ -541,6 +543,12 @@ class _RegisterPageState extends State<RegisterPage>
                           onToggleObscure: () =>
                               setState(() => _obscurePw = !_obscurePw),
                         ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, left: 4),
+                        child: Text(kPasswordHint, style: TextStyle(
+                          fontFamily: 'Ubuntu', color: kWhite.withOpacity(0.30),
+                          fontSize: 11)),
                       ),
                       const SizedBox(height: 14),
 

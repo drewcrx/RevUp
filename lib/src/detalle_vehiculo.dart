@@ -9,6 +9,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import 'api_service.dart';
 import 'vehiculo_model.dart';
+import 'qr_utils.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -192,7 +193,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   Future<void> _mostrarOpcionesImpresion() async {
     if (_imprimiendo) return;
     final qrData = (widget.vehiculo.qrToken != null && widget.vehiculo.qrToken!.isNotEmpty)
-        ? widget.vehiculo.qrToken! : widget.vehiculo.placa;
+        ? qrUrlParaToken(widget.vehiculo.qrToken!) : widget.vehiculo.placa;
     final font = await _loadProjectFont();
     if (!mounted) return;
 
@@ -466,7 +467,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   Widget build(BuildContext context) {
     final qrData = (widget.vehiculo.qrToken != null &&
             widget.vehiculo.qrToken!.isNotEmpty)
-        ? widget.vehiculo.qrToken!
+        ? qrUrlParaToken(widget.vehiculo.qrToken!)
         : widget.vehiculo.placa;
 
     final anio        = widget.vehiculo.anio?.toString() ?? "—";

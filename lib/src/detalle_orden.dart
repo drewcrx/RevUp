@@ -277,14 +277,22 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     color: _kBlue.withOpacity(0.07));
 
   // ── Color semántico de estado ─────────────────────────────────────────────
+  // Estados reales del backend: RECIBIDO, PENDIENTE, ENTREGADO.
   Color _estadoColor(String e) {
     switch (e.toUpperCase()) {
       case 'RECIBIDO':    return _kBlueGlow;
-      case 'DIAGNOSTICO': return Colors.amberAccent;
-      case 'REPARACION':  return Colors.orangeAccent;
-      case 'LISTO':       return Colors.lightGreenAccent;
+      case 'PENDIENTE':   return Colors.orangeAccent;
       case 'ENTREGADO':   return Colors.greenAccent;
       default:            return _kWhite;
+    }
+  }
+
+  // Etiqueta amigable del estado del trabajo, para no confundirlo con el
+  // chip de estado de pago (que también puede decir "PENDIENTE").
+  String _estadoLabel(String e) {
+    switch (e.toUpperCase()) {
+      case 'PENDIENTE': return 'EN PROCESO';
+      default:          return e;
     }
   }
 
@@ -332,6 +340,10 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final int? km    = kmRaw is int ? kmRaw : int.tryParse(kmRaw?.toString() ?? "");
     final eColor     = _estadoColor(estado);
     final entregado  = estado == "ENTREGADO";
+    final pagoPendiente = pagoEstado.toUpperCase().contains("PEND");
+    // No se puede entregar el vehículo si aún falta cobrar (el backend
+    // también lo bloquea, esto es solo para avisar antes de intentarlo).
+    final puedeCerrar = !entregado && !pagoPendiente;
 
     return Theme(
       data: ThemeData(fontFamily: 'Ubuntu',
@@ -463,11 +475,12 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                         color: _kWhite.withOpacity(0.35), fontSize: 12)),
                   ]),
                   const SizedBox(height: 12),
-                  // Estado + pago en chips
-                  Row(children: [
-                    _statusChip(estado, eColor),
-                    const SizedBox(width: 8),
-                    _statusChip(pagoEstado,
+                  // Estado del trabajo + estado del pago en chips separados
+                  // (ambos pueden decir "pendiente" pero significan cosas
+                  // distintas, por eso llevan prefijo).
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    _statusChip("Trabajo: ${_estadoLabel(estado)}", eColor),
+                    _statusChip("Pago: $pagoEstado",
                       pagoEstado.toUpperCase().contains("PEND")
                           ? Colors.orangeAccent : Colors.greenAccent),
                   ]),
@@ -582,20 +595,38 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                   ]),
                 ])),
 
+                // ── Aviso si falta cobrar ───────────────────────────────
+                if (pagoPendiente && !entregado)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.info_outline_rounded,
+                        color: Colors.orangeAccent, size: 15),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(
+                        "Falta registrar el pago completo antes de poder "
+                        "entregar el vehículo.",
+                        style: TextStyle(fontFamily: 'Ubuntu',
+                          color: Colors.orangeAccent.withOpacity(0.85),
+                          fontSize: 12, height: 1.4),
+                      )),
+                    ]),
+                  ),
+
                 // ── Cerrar OT ─────────────────────────────────────────────
                 GestureDetector(
-                  onTap: entregado ? null : _cerrarOT,
+                  onTap: puedeCerrar ? _cerrarOT : null,
                   child: Container(
                     height: 52,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(13),
-                      gradient: entregado ? null
+                      gradient: !puedeCerrar ? null
                           : const LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [Color(0xFF2AA0FF), _kBlueDark]),
-                      color: entregado ? Colors.white10 : null,
-                      boxShadow: entregado ? null : [BoxShadow(
+                      color: !puedeCerrar ? Colors.white10 : null,
+                      boxShadow: !puedeCerrar ? null : [BoxShadow(
                         color: _kBlue.withOpacity(0.35),
                         blurRadius: 14, offset: const Offset(0, 4))],
                     ),
@@ -604,18 +635,24 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       Icon(
                         entregado
                             ? Icons.check_circle_rounded
-                            : Icons.done_all_rounded,
-                        color: entregado
-                            ? Colors.greenAccent.withOpacity(0.50)
+                            : pagoPendiente
+                                ? Icons.lock_outline_rounded
+                                : Icons.done_all_rounded,
+                        color: !puedeCerrar
+                            ? Colors.white.withOpacity(0.30)
                             : Colors.white,
                         size: 18),
                       const SizedBox(width: 8),
                       Text(
-                        entregado ? "YA ENTREGADA" : "CERRAR OT — ENTREGAR",
+                        entregado
+                            ? "YA ENTREGADA"
+                            : pagoPendiente
+                                ? "FALTA REGISTRAR EL PAGO"
+                                : "CERRAR OT — ENTREGAR",
                         style: TextStyle(
                           fontFamily: 'Ubuntu',
-                          color: entregado
-                              ? _kWhite.withOpacity(0.25) : Colors.white,
+                          color: !puedeCerrar
+                              ? _kWhite.withOpacity(0.35) : Colors.white,
                           fontWeight: FontWeight.w900,
                           fontSize: 13, letterSpacing: 1.5)),
                     ]),

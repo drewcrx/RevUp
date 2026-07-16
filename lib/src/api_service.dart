@@ -351,6 +351,34 @@ class ApiService {
     }
   }
 
+  /// Cambia la contraseña del usuario logueado (requiere la actual).
+  static Future<String?> cambiarPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final url = Uri.parse("$baseUrl/usuarios/password");
+
+    try {
+      final res = await http
+          .put(
+            url,
+            headers: _headersAuth(),
+            body: jsonEncode({
+              'currentPassword': currentPassword,
+              'newPassword': newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) return null;
+
+      final data = jsonDecode(res.body);
+      return (data['error'] ?? "No se pudo cambiar la contraseña").toString();
+    } catch (_) {
+      return "No se pudo conectar al servidor. Verifica que el backend esté encendido.";
+    }
+  }
+
   // =========================
   // ORDENES DE TRABAJO (privado)
   // =========================

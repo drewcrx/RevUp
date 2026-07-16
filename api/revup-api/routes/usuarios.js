@@ -7,11 +7,20 @@ import jwt from "jsonwebtoken";
 
 import { sendMail } from "../utils/mailer.js";
 import { baseTemplate } from "../utils/mail_templates.js";
+import { requireAuth } from "../src/middleware/auth.js";
+import { FAVICON_LINK_TAG } from "../utils/favicon.js";
 
 const router = express.Router();
 
 // Necesario para formularios HTML (reset-password)
 router.use(express.urlencoded({ extended: true }));
+
+// Contraseña fuerte: mínimo 8 caracteres, con al menos una letra y un número.
+const MSG_PASSWORD_DEBIL =
+  "La contraseña debe tener al menos 8 caracteres e incluir letras y números.";
+function passwordEsFuerte(pw) {
+  return typeof pw === "string" && pw.length >= 8 && /[A-Za-z]/.test(pw) && /[0-9]/.test(pw);
+}
 
 function appUrl() {
   return process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -40,6 +49,7 @@ function renderSimplePage(title, message, ok = false) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RevUp — ${title}</title>
+  ${FAVICON_LINK_TAG}
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -172,6 +182,7 @@ function renderResetPasswordForm(token, error = "") {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>RevUp — Cambiar contraseña</title>
+  ${FAVICON_LINK_TAG}
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -307,10 +318,13 @@ function renderResetPasswordForm(token, error = "") {
         <input type="hidden" name="token" value="${token || ""}" />
 
         <label>Nueva contraseña</label>
-        <input type="password" name="password" minlength="6" required placeholder="Mínimo 6 caracteres" />
+        <input type="password" name="password" minlength="8" required
+          pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,}"
+          title="Mínimo 8 caracteres, con letras y números"
+          placeholder="Mínimo 8 caracteres, con letras y números" />
 
         <label>Confirmar contraseña</label>
-        <input type="password" name="password2" minlength="6" required placeholder="Repite la contraseña" />
+        <input type="password" name="password2" minlength="8" required placeholder="Repite la contraseña" />
 
         <button type="submit">GUARDAR CONTRASEÑA</button>
       </form>
@@ -335,6 +349,9 @@ router.post("/register", async (req, res) => {
   const { nombre, correo, usuario, password } = req.body || {};
   if (!nombre || !correo || !usuario || !password) {
     return res.status(400).json({ error: "Completa todos los campos" });
+  }
+  if (!passwordEsFuerte(password)) {
+    return res.status(400).json({ error: MSG_PASSWORD_DEBIL });
   }
 
   try {
@@ -463,6 +480,43 @@ router.post("/login", async (req, res) => {
       role: user.role || "mechanic",
     },
   });
+});
+
+//
+// =========================
+// CAMBIAR CONTRASEÑA (con sesión activa)
+// =========================
+//
+router.put("/password", requireAuth, async (req, res) => {
+  const currentPassword = (req.body?.currentPassword || "").toString();
+  const newPassword     = (req.body?.newPassword     || "").toString();
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: "Completa la contraseña actual y la nueva" });
+  }
+  if (!passwordEsFuerte(newPassword)) {
+    return res.status(400).json({ error: MSG_PASSWORD_DEBIL });
+  }
+
+  try {
+    const q = await pool.query("SELECT password_hash FROM usuarios WHERE id = $1", [req.user.id]);
+    if (q.rowCount === 0) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    const ok = await bcrypt.compare(currentPassword, q.rows[0].password_hash);
+    if (!ok) return res.status(401).json({ error: "La contraseña actual es incorrecta" });
+
+    const sameAsCurrent = await bcrypt.compare(newPassword, q.rows[0].password_hash);
+    if (sameAsCurrent) {
+      return res.status(400).json({ error: "La nueva contraseña debe ser distinta a la actual" });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE usuarios SET password_hash = $1 WHERE id = $2", [hash, req.user.id]);
+
+    return res.json({ mensaje: "Contraseña actualizada correctamente" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error cambiando la contraseña", detalle: e.message });
+  }
 });
 
 // =========================
@@ -601,9 +655,9 @@ router.post("/reset-password", async (req, res) => {
   const password2 = (req.body?.password2 || "").toString();
 
   if (!token) return res.status(400).send(renderSimplePage("Error", "Token inválido"));
-  if (!password || password.length < 6) {
+  if (!password || !passwordEsFuerte(password)) {
     return res.status(400).send(
-      renderResetPasswordForm(token, "La contraseña debe tener mínimo 6 caracteres.")
+      renderResetPasswordForm(token, MSG_PASSWORD_DEBIL)
     );
   }
   if (password !== password2) {

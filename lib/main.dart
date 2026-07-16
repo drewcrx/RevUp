@@ -11,6 +11,7 @@ import 'src/login_page.dart';
 import 'src/register_page.dart';
 import 'src/forgot_password_page.dart';
 import 'src/forgot_username_page.dart';
+import 'src/cambiar_password.dart';
 import 'src/ordenes.dart';
 import 'src/nueva_orden.dart';
 import 'src/detalle_orden.dart';
@@ -165,6 +166,7 @@ class MyApp extends StatelessWidget {
         '/detalle_qr':       (_) => const DetalleQRPage(),
         '/forgot_password':  (_) => const ForgotPasswordPage(),
         '/forgot_username':  (_) => const ForgotUsernamePage(),
+        '/cambiar_password': (_) => const CambiarPasswordPage(),
         '/ordenes':          (_) => const OrdenesPage(),
         '/nueva_orden':      (_) => const NuevaOrdenPage(),
         '/reportes':         (_) => const ReportesPage(),

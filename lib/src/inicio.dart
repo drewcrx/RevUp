@@ -611,6 +611,13 @@ class _InicioPageState extends State<InicioPage> {
                                     ),
                                   ]),
                                 ]),
+                                const SizedBox(height: 4),
+                                Text(
+                                  soloPendientes
+                                      ? "Mostrando ${listaOtsUI.length} pendiente${listaOtsUI.length == 1 ? '' : 's'} de ${otsMecanicoMes.length} OT${otsMecanicoMes.length == 1 ? '' : 's'} del mes"
+                                      : "Mostrando las ${otsMecanicoMes.length} OT${otsMecanicoMes.length == 1 ? '' : 's'} del mes",
+                                  style: TextStyle(fontFamily: 'Ubuntu', color: kWhite.withOpacity(0.30), fontSize: 11),
+                                ),
                                 const SizedBox(height: 12),
 
                                 if (listaOtsUI.isEmpty)

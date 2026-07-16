@@ -374,8 +374,17 @@ router.post("/:id/cerrar", async (req, res) => {
     const ot = await getOtIfAllowed(ordenId, req.user);
     if (!ot) return res.status(404).json({ error: "OT no encontrada" });
 
-    await recalcularTotales(ordenId);
+    const { total } = await recalcularTotales(ordenId);
     await recalcularPagoEstado(ordenId);
+
+    // 🔒 No se puede entregar el vehículo si el pago no está completo.
+    const pagado = await getPagado(ordenId);
+    if (total > 0 && pagado < total) {
+      const falta = (total - pagado).toFixed(2);
+      return res.status(400).json({
+        error: `No se puede entregar: falta registrar el pago. Faltan $${falta} de $${total.toFixed(2)}.`,
+      });
+    }
 
     const q = await pool.query(
       `UPDATE ordenes_trabajo

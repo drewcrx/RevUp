@@ -6,6 +6,7 @@ import router from "./routes/vehiculos.js";
 import usuariosRouter from "./routes/usuarios.js";
 import ordenesRoutes from "./routes/ordenes.js";
 import reportesRoutes from "./routes/reportes.js";
+import publicoRoutes from "./routes/publico.js";
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ app.use("/reportes", reportesRoutes);
 app.use("/ordenes", ordenesRoutes);
 app.use("/vehiculos", router);
 app.use("/usuarios", usuariosRouter);
+app.use("/v", publicoRoutes);
 
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, "0.0.0.0", () =>

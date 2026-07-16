@@ -37,12 +37,10 @@ class _OrdenesVehiculoQrPageState extends State<OrdenesVehiculoQrPage> {
     setState(() => loading = false);
   }
 
+  // Estados reales del backend: RECIBIDO, PENDIENTE, ENTREGADO.
   Color _colorEstado(String estado) {
     switch (estado) {
       case 'RECIBIDO':    return _kBlueGlow;
-      case 'DIAGNOSTICO': return Colors.amberAccent;
-      case 'REPARACION':  return Colors.orangeAccent;
-      case 'LISTO':       return Colors.lightGreenAccent;
       case 'PENDIENTE':   return Colors.orangeAccent;
       case 'ENTREGADO':   return Colors.greenAccent;
       default:            return _kWhite;
@@ -52,19 +50,22 @@ class _OrdenesVehiculoQrPageState extends State<OrdenesVehiculoQrPage> {
   IconData _iconEstado(String estado) {
     switch (estado) {
       case 'RECIBIDO':    return Icons.inbox_rounded;
-      case 'DIAGNOSTICO': return Icons.search_rounded;
-      case 'REPARACION':  return Icons.build_rounded;
-      case 'LISTO':       return Icons.check_circle_rounded;
+      case 'PENDIENTE':   return Icons.build_rounded;
       case 'ENTREGADO':   return Icons.done_all_rounded;
       default:            return Icons.pending_actions_rounded;
     }
   }
 
-  String _estadoUI(OrdenTrabajo o) {
-    final any = o as dynamic;
-    final s   = (any.estadoUi ?? any.estado_ui ?? o.estado)?.toString();
-    return (s == null || s.isEmpty) ? o.estado : s;
+  // Etiqueta amigable: "PENDIENTE" aquí es el trabajo en curso, no el pago
+  // (el pago se muestra aparte, con su propia etiqueta "Pago").
+  String _labelEstado(String estado) {
+    switch (estado) {
+      case 'PENDIENTE': return 'EN PROCESO';
+      default:          return estado;
+    }
   }
+
+  String _estadoUI(OrdenTrabajo o) => o.estado.isEmpty ? '' : o.estado;
   // ═════════════════════════════════════════════════════════════════════════ //
 
   @override
@@ -307,7 +308,7 @@ class _OrdenesVehiculoQrPageState extends State<OrdenesVehiculoQrPage> {
     child: Row(children: [
       Icon(_iconEstado(estado), color: c, size: 12),
       const SizedBox(width: 6),
-      Text(estado, style: TextStyle(
+      Text(_labelEstado(estado), style: TextStyle(
         fontFamily: 'Ubuntu', color: c,
         fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
       const SizedBox(width: 8),

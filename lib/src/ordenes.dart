@@ -35,12 +35,12 @@ class _OrdenesPageState extends State<OrdenesPage> {
     setState(() => loading = false);
   }
 
+  // Estados reales que devuelve el backend: RECIBIDO, PENDIENTE, ENTREGADO.
+  // "PENDIENTE" aquí es el trabajo en curso (no el pago, que se muestra aparte).
   Color _colorEstado(String estado) {
     switch (estado) {
       case 'RECIBIDO':    return _kBlueGlow;
-      case 'DIAGNOSTICO': return Colors.amberAccent;
-      case 'REPARACION':  return Colors.orangeAccent;
-      case 'LISTO':       return Colors.lightGreenAccent;
+      case 'PENDIENTE':   return Colors.orangeAccent;
       case 'ENTREGADO':   return Colors.greenAccent;
       default:            return _kWhite;
     }
@@ -49,11 +49,18 @@ class _OrdenesPageState extends State<OrdenesPage> {
   IconData _iconEstado(String estado) {
     switch (estado) {
       case 'RECIBIDO':    return Icons.inbox_rounded;
-      case 'DIAGNOSTICO': return Icons.search_rounded;
-      case 'REPARACION':  return Icons.build_rounded;
-      case 'LISTO':       return Icons.check_circle_rounded;
+      case 'PENDIENTE':   return Icons.build_rounded;
       case 'ENTREGADO':   return Icons.done_all_rounded;
       default:            return Icons.help_outline_rounded;
+    }
+  }
+
+  // Etiqueta amigable para el estado del trabajo, para no confundirlo
+  // con el estado del pago (que también puede decir "PENDIENTE").
+  String _labelEstado(String estado) {
+    switch (estado) {
+      case 'PENDIENTE': return 'EN PROCESO';
+      default:          return estado;
     }
   }
   // ═════════════════════════════════════════════════════════════════════════ //
@@ -215,7 +222,7 @@ class _OrdenesPageState extends State<OrdenesPage> {
       child: Row(children: [
         Icon(_iconEstado(estado), color: c, size: 13),
         const SizedBox(width: 6),
-        Text(estado, style: TextStyle(
+        Text(_labelEstado(estado), style: TextStyle(
           fontFamily: 'Ubuntu', color: c,
           fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 1)),
         const SizedBox(width: 8),

@@ -354,7 +354,7 @@ class _PerfilPageState extends State<PerfilPage> {
                 _actionTile(
                   icon: Icons.lock_reset_rounded,
                   label: "Cambiar contraseña",
-                  onTap: () => Navigator.pushNamed(context, '/forgot_password'),
+                  onTap: () => Navigator.pushNamed(context, '/cambiar_password'),
                 ),
               ])),
 

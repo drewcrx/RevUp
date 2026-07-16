@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api_service.dart';
 import 'detalle_vehiculo_desde_qr.dart';
+import 'qr_utils.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -173,7 +174,7 @@ class _ScanQRPageState extends State<ScanQRPage>
                   setState(() => _processing = false);
                   return;
                 }
-                await _abrirDetalleDesdeQr(rawValue.trim());
+                await _abrirDetalleDesdeQr(extraerTokenDeQr(rawValue));
               },
             ),
           ),

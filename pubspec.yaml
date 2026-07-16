@@ -46,7 +46,12 @@ dev_dependencies:
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/icono.png"
+  image_path: "assets/images/RevUp.png"
+  web:
+    generate: true
+    image_path: "assets/images/RevUp.png"
+    background_color: "#04060D"
+    theme_color: "#04060D"
 
 flutter:
   uses-material-design: true
