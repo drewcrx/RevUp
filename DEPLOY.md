@@ -82,7 +82,9 @@ El pipeline se activa automáticamente en cada `git push` a `main`.
 
 1. **Build backend** → imagen Docker → push a `ghcr.io/drewcrx/revup-backend:latest`
 2. **Build frontend** → imagen Docker (Flutter web + nginx) → push a `ghcr.io/drewcrx/revup-frontend:latest`
-3. **Deploy** → SSH al VPS → `docker compose pull && docker compose up -d`
+3. **Deploy** → SSH al VPS → sincroniza `/opt/revup` con `git reset --hard origin/main`
+   (así `docker-compose.yml`, `traefik/dynamic.yml`, etc. quedan siempre iguales a lo que hay
+   en GitHub — sin esto, cambios a esos archivos había que aplicarlos a mano) → `docker compose pull && docker compose up -d`
 
 ## Actualización manual
 
