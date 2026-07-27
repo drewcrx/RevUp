@@ -5,6 +5,7 @@
 import express from "express";
 import { pool } from "../db/connection.js";
 import { FAVICON_LINK_TAG } from "../utils/favicon.js";
+import { escapeHtml } from "../utils/html.js";
 
 const router = express.Router();
 
@@ -107,8 +108,9 @@ function renderNoEncontrado() {
 function renderVehiculo(v, ot) {
   const est  = ot ? estadoInfo(ot.estado_ui) : { label: "SIN ÓRDENES REGISTRADAS", color: kWhite };
   const pago = ot ? pagoInfo(ot.pago_estado) : null;
-  const nombreVehiculo = [v.marca, v.modelo].filter(Boolean).join(" ") || "Vehículo";
-  const detalles = [v.anio, v.color].filter(Boolean).join(" · ");
+  const placa = escapeHtml(v.placa);
+  const nombreVehiculo = escapeHtml([v.marca, v.modelo].filter(Boolean).join(" ") || "Vehículo");
+  const detalles = escapeHtml([v.anio, v.color].filter(Boolean).join(" · "));
 
   const filas = ot
     ? `
@@ -118,7 +120,7 @@ function renderVehiculo(v, ot) {
     : `<p class="msg">Este vehículo todavía no tiene órdenes de trabajo registradas.</p>`;
 
   return shellPage(`
-    <span class="placa">${v.placa}</span>
+    <span class="placa">${placa}</span>
     <div class="subtitle">${nombreVehiculo}${detalles ? " · " + detalles : ""}</div>
 
     <div class="chips">
@@ -131,7 +133,7 @@ function renderVehiculo(v, ot) {
     ${filas}
 
     <p class="note">Esta información se actualiza en tiempo real. Para más detalle, contacta al taller.</p>
-  `, `${v.placa} — Estado del vehículo`);
+  `, `${placa} — Estado del vehículo`);
 }
 
 router.get("/:token", async (req, res) => {

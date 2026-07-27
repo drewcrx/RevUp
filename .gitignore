@@ -2,6 +2,10 @@
 .env
 **/.env
 
+# Node dependencies (backend + any root tooling)
+node_modules/
+**/node_modules/
+
 # Miscellaneous
 *.class
 *.log

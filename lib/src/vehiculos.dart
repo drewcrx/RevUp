@@ -66,8 +66,8 @@ class _VehiculosPageState extends State<VehiculosPage> {
   String _safeLower(String? s) => (s ?? "").trim().toLowerCase();
   String _getColor(Vehiculo v)       { try { return ((v as dynamic).color?.toString()        ?? '').trim(); } catch (_) { return ''; } }
   String _getTipo(Vehiculo v)        { try { return ((v as dynamic).tipoVehiculo?.toString() ?? '').trim(); } catch (_) { return ''; } }
-  String _getPropietario(Vehiculo v) { try { return ((v as dynamic).propietario?.toString()  ?? '').trim(); } catch (_) { return ''; } }
-  String _getTelefono(Vehiculo v)    { try { return ((v as dynamic).telefono?.toString()      ?? '').trim(); } catch (_) { return ''; } }
+  String _getPropietario(Vehiculo v) { try { return ((v as dynamic).propietarioNombre?.toString()  ?? '').trim(); } catch (_) { return ''; } }
+  String _getTelefono(Vehiculo v)    { try { return ((v as dynamic).propietarioTelefono?.toString() ?? '').trim(); } catch (_) { return ''; } }
   String _getNotaIngreso(Vehiculo v) { try { return ((v as dynamic).notaIngreso?.toString()  ?? '').trim(); } catch (_) { return ''; } }
   int? _getAnio(Vehiculo v) {
     try {
@@ -429,8 +429,8 @@ class _VehiculoItem extends StatelessWidget {
 
   // ── Helpers (idénticos al original) ────────────────────────────────────────
   String _getColor(Vehiculo v)       { try { return ((v as dynamic).color?.toString()       ?? '').trim(); } catch (_) { return ''; } }
-  String _getPropietario(Vehiculo v) { try { return ((v as dynamic).propietario?.toString() ?? '').trim(); } catch (_) { return ''; } }
-  String _getTelefono(Vehiculo v)    { try { return ((v as dynamic).telefono?.toString()     ?? '').trim(); } catch (_) { return ''; } }
+  String _getPropietario(Vehiculo v) { try { return ((v as dynamic).propietarioNombre?.toString() ?? '').trim(); } catch (_) { return ''; } }
+  String _getTelefono(Vehiculo v)    { try { return ((v as dynamic).propietarioTelefono?.toString() ?? '').trim(); } catch (_) { return ''; } }
   int? _getAnio(Vehiculo v) {
     try {
       final a = (v as dynamic).anio;

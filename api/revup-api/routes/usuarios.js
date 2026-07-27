@@ -9,6 +9,7 @@ import { sendMail } from "../utils/mailer.js";
 import { baseTemplate } from "../utils/mail_templates.js";
 import { requireAuth } from "../src/middleware/auth.js";
 import { FAVICON_LINK_TAG } from "../utils/favicon.js";
+import { escapeHtml } from "../utils/html.js";
 
 const router = express.Router();
 
@@ -315,7 +316,7 @@ function renderResetPasswordForm(token, error = "") {
       ${errHtml}
 
       <form method="POST" action="/usuarios/reset-password">
-        <input type="hidden" name="token" value="${token || ""}" />
+        <input type="hidden" name="token" value="${escapeHtml(token || "")}" />
 
         <label>Nueva contraseña</label>
         <input type="password" name="password" minlength="8" required
@@ -724,7 +725,7 @@ router.post("/forgot-username", async (req, res) => {
         subject: "Tu usuario - RevUp",
         html: baseTemplate({
           title: "Recuperar usuario",
-          subtitle: `Tu nombre de usuario es: <b style="color:#F0F4FF;">${q.rows[0].usuario}</b>`,
+          subtitle: `Tu nombre de usuario es: <b style="color:#F0F4FF;">${escapeHtml(q.rows[0].usuario)}</b>`,
           buttonText: "Iniciar sesión",
           buttonUrl: appUrl(),
         }),
