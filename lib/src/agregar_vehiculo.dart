@@ -163,6 +163,45 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     decoration: _dec(label, icon),
   );
 
+  // ── Selector de fecha (evita que escriban mal el formato) ────────────────
+  Future<void> _elegirUltimaVisita() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2000, 1, 1),
+      lastDate: now,
+      helpText: "Última visita al taller",
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: _kBlue, onPrimary: Colors.white,
+            surface: Color(0xFF0D1420), onSurface: _kWhite,
+          ),
+          dialogBackgroundColor: const Color(0xFF0D1420),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    final y = picked.year.toString().padLeft(4, '0');
+    final m = picked.month.toString().padLeft(2, '0');
+    final d = picked.day.toString().padLeft(2, '0');
+    setState(() => ultimaVisitaController.text = "$y-$m-$d");
+  }
+
+  Widget _dateField(TextEditingController ctrl, String label, IconData icon,
+      VoidCallback onTap) => TextField(
+    controller: ctrl,
+    readOnly: true,
+    onTap: onTap,
+    style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+    decoration: _dec(label, icon).copyWith(
+      suffixIcon: Icon(Icons.arrow_drop_down_rounded,
+        color: _kBlue.withOpacity(0.7)),
+    ),
+  );
+
   // ── Dropdown ───────────────────────────────────────────────────────────────
   Widget _dropdown<T>(String label, IconData icon, T? value,
       List<T> items, ValueChanged<T?> onChanged) =>
@@ -262,8 +301,8 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
               _field(kilometrajeController, "Kilometraje", Icons.speed_rounded,
                 keyboard: TextInputType.number),
               const SizedBox(height: 12),
-              _field(ultimaVisitaController, "Última visita (YYYY-MM-DD)",
-                Icons.event_rounded),
+              _dateField(ultimaVisitaController, "Última visita",
+                Icons.event_rounded, _elegirUltimaVisita),
 
               // ── Sección: Propietario ───────────────────────────────────
               _section("Propietario", Icons.person_rounded),

@@ -549,6 +549,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final pago    = (o['pago_estado'] ?? '').toString();
     final total   = double.tryParse((o['total'] ?? 0).toString()) ?? 0;
     final fecha   = DateTime.tryParse((o['created_at'] ?? '').toString());
+    final km      = int.tryParse((o['kilometraje_ot'] ?? '').toString()) ?? 0;
     final c       = _estadoOtColor(estado);
     final isPend  = pago.toUpperCase().contains("PEND");
 
@@ -596,9 +597,13 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             ]),
             const SizedBox(height: 4),
             Text(
-              fecha != null
-                  ? "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}"
-                  : "—",
+              [
+                if (fecha != null)
+                  "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}"
+                else
+                  "—",
+                if (km > 0) "$km km",
+              ].join("  ·  "),
               style: TextStyle(fontFamily: 'Ubuntu',
                 color: _kWhite.withOpacity(0.35), fontSize: 11)),
           ])),

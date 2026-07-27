@@ -314,6 +314,7 @@ class _DetalleVehiculoDesdeQrPageState
           final estado = (o['estado']     ?? '').toString().toUpperCase();
           final pago   = (o['pago_estado'] ?? '').toString();
           final total  = o['total'];
+          final km     = int.tryParse((o['kilometraje_ot'] ?? '').toString()) ?? 0;
           final c      = _colorEstado(estado);
           final isPend = pago.toUpperCase().contains("PEND");
 
@@ -370,11 +371,19 @@ class _DetalleVehiculoDesdeQrPageState
                       Text("  ·  Pago ", style: TextStyle(
                         fontFamily: 'Ubuntu',
                         color: _kWhite.withOpacity(0.30), fontSize: 11)),
-                      Text(pago, style: TextStyle(
-                        fontFamily: 'Ubuntu',
-                        color: isPend ? Colors.orangeAccent : Colors.greenAccent,
-                        fontWeight: FontWeight.w700, fontSize: 11)),
+                      Expanded(child: Text(pago,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Ubuntu',
+                          color: isPend ? Colors.orangeAccent : Colors.greenAccent,
+                          fontWeight: FontWeight.w700, fontSize: 11))),
                     ]),
+                    if (km > 0) ...[
+                      const SizedBox(height: 3),
+                      Text("$km km", style: TextStyle(
+                        fontFamily: 'Ubuntu',
+                        color: _kWhite.withOpacity(0.30), fontSize: 11)),
+                    ],
                   ])),
                   Icon(Icons.chevron_right_rounded,
                       color: _kBlue.withOpacity(0.30), size: 18),

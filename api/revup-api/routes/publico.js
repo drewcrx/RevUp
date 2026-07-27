@@ -125,12 +125,14 @@ function renderVehiculo(v, ots) {
         const oEst  = estadoInfo(o.estado_ui);
         const oPago = pagoInfo(o.pago_estado);
         const fecha = new Date(o.created_at).toLocaleDateString("es-EC");
+        const km = Number(o.kilometraje_ot || 0) > 0
+          ? `${Number(o.kilometraje_ot).toLocaleString("es-EC")} km` : "";
         const sintomas = escapeHtml(o.symptoms || "");
         return `
           <div class="hist-item">
             <div class="hist-top">
               <span class="chip" style="background:${oEst.color}22;color:${oEst.color};border:1px solid ${oEst.color}55;">${oEst.label}</span>
-              <span class="hist-date">${fecha}</span>
+              <span class="hist-date">${fecha}${km ? " · " + km : ""}</span>
             </div>
             ${sintomas ? `<div class="hist-sintomas">${sintomas}</div>` : ""}
             <div class="hist-bottom">
@@ -182,7 +184,7 @@ router.get("/:token", async (req, res) => {
 
     const otq = await pool.query(
       `SELECT
-         symptoms, estado, pago_estado, total, created_at,
+         symptoms, estado, pago_estado, total, kilometraje_ot, created_at,
          CASE
            WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
            WHEN estado = 'RECIBIDO'

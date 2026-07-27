@@ -458,7 +458,7 @@ router.get("/:placa/ordenes", async (req, res) => {
 
     const result = await pool.query(
       `SELECT
-         id, symptoms, estado, pago_estado, total, created_at, closed_at,
+         id, symptoms, estado, pago_estado, total, kilometraje_ot, created_at, closed_at,
          CASE
            WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
            WHEN estado = 'RECIBIDO'
