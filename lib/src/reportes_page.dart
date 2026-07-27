@@ -315,8 +315,10 @@ class _ReportesPageState extends State<ReportesPage> {
             Text("Total \$$total", style: TextStyle(
               fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.70),
               fontWeight: FontWeight.w700, fontSize: 12)),
-            Text("  ·  Cobrado \$$pagado", style: TextStyle(
-              fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.38), fontSize: 11)),
+            Expanded(child: Text("  ·  Cobrado \$$pagado",
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.38), fontSize: 11))),
           ]),
           if (fecha.isNotEmpty)
             Padding(

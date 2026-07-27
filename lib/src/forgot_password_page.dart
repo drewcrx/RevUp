@@ -491,7 +491,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                                     decoration: BoxDecoration(
                                       borderRadius:
                                           BorderRadius.circular(10),
-                                      gradient: _loading
+                                      gradient: (_loading || _sent)
                                           ? null
                                           : const LinearGradient(
                                               begin: Alignment.topLeft,
@@ -501,10 +501,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                                                 Color(0xFF0A5FCC),
                                               ],
                                             ),
-                                      color: _loading
+                                      color: (_loading || _sent)
                                           ? Colors.white10
                                           : null,
-                                      boxShadow: _loading
+                                      boxShadow: (_loading || _sent)
                                           ? null
                                           : [
                                               BoxShadow(
@@ -524,7 +524,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                                               BorderRadius.circular(10),
                                         ),
                                       ),
-                                      onPressed: _loading ? null : _send,
+                                      onPressed:
+                                          (_loading || _sent) ? null : _send,
                                       child: _loading
                                           ? const SizedBox(
                                               width: 22,
@@ -535,11 +536,15 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                                                 color: Colors.white,
                                               ),
                                             )
-                                          : const Text(
-                                              "ENVIAR ENLACE",
+                                          : Text(
+                                              _sent
+                                                  ? "ENLACE ENVIADO"
+                                                  : "ENVIAR ENLACE",
                                               style: TextStyle(
                                                 fontFamily: 'Ubuntu',
-                                                color: Colors.white,
+                                                color: _sent
+                                                    ? kWhite.withOpacity(0.35)
+                                                    : Colors.white,
                                                 fontWeight: FontWeight.w900,
                                                 fontSize: 14,
                                                 letterSpacing: 2.2,
@@ -548,6 +553,19 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
                                     ),
                                   ),
                                 ),
+
+                                if (_sent) ...[
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    "Revisa tu correo (y la carpeta de spam).",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontFamily: 'Ubuntu',
+                                      color: kWhite.withOpacity(0.40),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
 
                                 const SizedBox(height: 20),
 

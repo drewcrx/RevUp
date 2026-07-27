@@ -43,37 +43,44 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
   @override
   void initState() {
     super.initState();
-    final myId = _currentUserIdOrThrow();
-    if (widget.mechanicId == myId) {
-      future = ApiService.obtenerMisOtsDelMes(month: widget.month);
-    } else {
-      future = ApiService.obtenerOtsMecanicoMes(
-        mechanicId: widget.mechanicId, month: widget.month);
+    // Si la sesión no está lista, que el error lo muestre el FutureBuilder
+    // (tarjeta roja ya existente) en vez de tumbar la pantalla completa.
+    try {
+      final myId = _currentUserIdOrThrow();
+      if (widget.mechanicId == myId) {
+        future = ApiService.obtenerMisOtsDelMes(month: widget.month);
+      } else {
+        future = ApiService.obtenerOtsMecanicoMes(
+          mechanicId: widget.mechanicId, month: widget.month);
+      }
+    } catch (e) {
+      future = Future.error(e);
     }
   }
   // ═════════════════════════════════════════════════════════════════════════ //
 
+  // Estados reales del backend: RECIBIDO, PENDIENTE, ENTREGADO.
   Color _colorEstado(String e) {
     switch (e.toUpperCase()) {
-      case 'RECIBIDO':    return _kBlueGlow;
-      case 'DIAGNOSTICO': return Colors.amberAccent;
-      case 'REPARACION':  return Colors.orangeAccent;
-      case 'LISTO':       return Colors.lightGreenAccent;
-      case 'ENTREGADO':   return Colors.greenAccent;
-      default:            return _kWhite;
+      case 'RECIBIDO':  return _kBlueGlow;
+      case 'PENDIENTE': return Colors.orangeAccent;
+      case 'ENTREGADO': return Colors.greenAccent;
+      default:          return _kWhite;
     }
   }
 
   IconData _iconEstado(String e) {
     switch (e.toUpperCase()) {
-      case 'RECIBIDO':    return Icons.inbox_rounded;
-      case 'DIAGNOSTICO': return Icons.search_rounded;
-      case 'REPARACION':  return Icons.build_rounded;
-      case 'LISTO':       return Icons.check_circle_rounded;
-      case 'ENTREGADO':   return Icons.done_all_rounded;
-      default:            return Icons.pending_actions_rounded;
+      case 'RECIBIDO':  return Icons.inbox_rounded;
+      case 'PENDIENTE': return Icons.build_rounded;
+      case 'ENTREGADO': return Icons.done_all_rounded;
+      default:          return Icons.pending_actions_rounded;
     }
   }
+
+  // Etiqueta amigable: "PENDIENTE" aquí es el trabajo en curso, no el pago.
+  String _labelEstado(String e) =>
+      e.toUpperCase() == 'PENDIENTE' ? 'EN PROCESO' : e;
 
   // Parsear "YYYY-MM" para mostrarlo legible
   String _mesLabel(String m) {
@@ -389,10 +396,11 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                                       color: _kWhite.withOpacity(0.65),
                                       fontWeight: FontWeight.w600,
                                       fontSize: 12)),
-                                  Text("  ·  Cobrado \$$pagado",
+                                  Expanded(child: Text("  ·  Cobrado \$$pagado",
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(fontFamily: 'Ubuntu',
                                       color: _kWhite.withOpacity(0.35),
-                                      fontSize: 11)),
+                                      fontSize: 11))),
                                 ]),
                               ])),
                               Icon(Icons.chevron_right_rounded,
@@ -432,7 +440,7 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
     child: Row(children: [
       Icon(_iconEstado(estado), color: c, size: 12),
       const SizedBox(width: 6),
-      Text(estado, style: TextStyle(fontFamily: 'Ubuntu', color: c,
+      Text(_labelEstado(estado), style: TextStyle(fontFamily: 'Ubuntu', color: c,
         fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 1)),
       const SizedBox(width: 8),
       Expanded(child: Divider(color: c.withOpacity(0.15), thickness: 1)),
