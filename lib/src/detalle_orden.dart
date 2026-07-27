@@ -383,20 +383,6 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
           ]),
           centerTitle: true,
           actions: [
-            if (km != null && km > 0)
-              Center(child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: _kBlue.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: _kBlue.withOpacity(0.28))),
-                  child: Text("$km km", style: const TextStyle(
-                    fontFamily: 'Ubuntu', color: _kBlue,
-                    fontWeight: FontWeight.w700, fontSize: 11))),
-              )),
             IconButton(
               icon: const Icon(Icons.refresh_rounded,
                 color: _kBlue, size: 20),
@@ -473,6 +459,19 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                     Text("OT #${widget.ordenId}",
                       style: TextStyle(fontFamily: 'Ubuntu',
                         color: _kWhite.withOpacity(0.35), fontSize: 12)),
+                  ]),
+                  const SizedBox(height: 10),
+                  // Kilometraje con el que se registró esta OT
+                  Row(children: [
+                    Icon(Icons.speed_rounded,
+                      color: _kBlue.withOpacity(0.65), size: 14),
+                    const SizedBox(width: 6),
+                    Text("Kilometraje del auto en esta OT: ", style: TextStyle(
+                      fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.45),
+                      fontSize: 12)),
+                    Text(km != null && km > 0 ? "$km km" : "—",
+                      style: const TextStyle(fontFamily: 'Ubuntu',
+                        color: _kBlue, fontWeight: FontWeight.w700, fontSize: 12)),
                   ]),
                   const SizedBox(height: 12),
                   // Estado del trabajo + estado del pago en chips separados
