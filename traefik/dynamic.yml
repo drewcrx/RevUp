@@ -18,6 +18,7 @@ http:
       rule: "Host(`portainerrevup.byronrm.com`)"
       entryPoints: [websecure]
       service: portainer
+      middlewares: [panel-auth]
       tls:
         certResolver: letsencrypt
 
@@ -25,8 +26,15 @@ http:
       rule: "Host(`pgrevup.byronrm.com`)"
       entryPoints: [websecure]
       service: adminer
+      middlewares: [panel-auth]
       tls:
         certResolver: letsencrypt
+
+  middlewares:
+    panel-auth:
+      basicAuth:
+        users:
+          - "andrew:$2b$10$otoj7gJuMSdBuaiw0YW.CuN0O8RHGKLFxhSOqfdpA6GDlul9XKyJO"
 
   services:
     frontend:
