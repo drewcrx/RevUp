@@ -212,46 +212,21 @@ class ApiService {
   }
 
   // =========================
-  // ARREGLOS (privado)
+  // HISTORIAL DE OTs POR VEHÍCULO (privado)
   // =========================
 
-  static Future<List<Arreglo>> obtenerArreglosPorPlaca(String placa) async {
-    final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/arreglos");
-    final res = await http.get(url, headers: _headersAuth());
+  static Future<List<Map<String, dynamic>>> obtenerOtsDelVehiculo(String placa) async {
+    final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/ordenes");
+    final res = await http
+        .get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
 
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
-      return data.map((e) => Arreglo.fromMap(e as Map<String, dynamic>)).toList();
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     }
 
-    throw _httpError(res, "Error al obtener arreglos");
-  }
-
-  static Future<bool> agregarArreglo({
-    required String placa,
-    required String descripcion,
-    required String tipo,
-  }) async {
-    final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/arreglos");
-
-    final res = await http.post(
-      url,
-      headers: _headersAuth(),
-      body: jsonEncode({
-        "descripcion": descripcion,
-        "tipo": tipo,
-      }),
-    );
-
-    return res.statusCode == 200;
-  }
-
-  static Future<bool> toggleArreglo(int id) async {
-    final url = Uri.parse("$baseUrl/vehiculos/arreglos/$id");
-    final res = await http
-        .put(url, headers: _headersAuth())
-        .timeout(const Duration(seconds: 10));
-    return res.statusCode == 200;
+    throw _httpError(res, "Error al obtener historial de OTs");
   }
 
   // =========================

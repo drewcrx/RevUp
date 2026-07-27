@@ -68,6 +68,13 @@ function shellPage(bodyHtml, title) {
     .row .k{color:rgba(240,244,255,0.45);}
     .row .v{color:${kWhite};font-weight:700;}
     .msg{font-size:14px;color:rgba(240,244,255,0.55);line-height:1.6;}
+    .hist-title{margin-top:22px;margin-bottom:10px;font-size:12px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.55);}
+    .hist-item{padding:12px;margin-bottom:8px;border-radius:10px;background:rgba(30,144,255,0.04);border:1px solid rgba(30,144,255,0.10);}
+    .hist-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+    .hist-date{font-size:11px;color:rgba(240,244,255,0.35);}
+    .hist-sintomas{margin-top:6px;font-size:12px;color:rgba(240,244,255,0.60);line-height:1.4;}
+    .hist-bottom{margin-top:8px;display:flex;justify-content:space-between;align-items:center;}
+    .hist-total{font-size:13px;font-weight:800;color:${kBlue};}
     .note{margin-top:18px;font-size:11px;color:rgba(240,244,255,0.28);line-height:1.5;text-align:center;}
     .card-footer{
       padding:12px 22px;border-top:1px solid rgba(30,144,255,0.08);background:#060B18;
@@ -105,18 +112,34 @@ function renderNoEncontrado() {
   `, "Código no válido");
 }
 
-function renderVehiculo(v, ot) {
-  const est  = ot ? estadoInfo(ot.estado_ui) : { label: "SIN ÓRDENES REGISTRADAS", color: kWhite };
-  const pago = ot ? pagoInfo(ot.pago_estado) : null;
+function renderVehiculo(v, ots) {
+  const actual = ots[0] || null;
+  const est  = actual ? estadoInfo(actual.estado_ui) : { label: "SIN ÓRDENES REGISTRADAS", color: kWhite };
+  const pago = actual ? pagoInfo(actual.pago_estado) : null;
   const placa = escapeHtml(v.placa);
   const nombreVehiculo = escapeHtml([v.marca, v.modelo].filter(Boolean).join(" ") || "Vehículo");
   const detalles = escapeHtml([v.anio, v.color].filter(Boolean).join(" · "));
 
-  const filas = ot
-    ? `
-      <div class="row"><span class="k">Total de la orden</span><span class="v">$${Number(ot.total || 0).toFixed(2)}</span></div>
-      <div class="row"><span class="k">Última actualización</span><span class="v">${new Date(ot.created_at).toLocaleDateString("es-EC")}</span></div>
-    `
+  const historial = ots.length
+    ? ots.map((o) => {
+        const oEst  = estadoInfo(o.estado_ui);
+        const oPago = pagoInfo(o.pago_estado);
+        const fecha = new Date(o.created_at).toLocaleDateString("es-EC");
+        const sintomas = escapeHtml(o.symptoms || "");
+        return `
+          <div class="hist-item">
+            <div class="hist-top">
+              <span class="chip" style="background:${oEst.color}22;color:${oEst.color};border:1px solid ${oEst.color}55;">${oEst.label}</span>
+              <span class="hist-date">${fecha}</span>
+            </div>
+            ${sintomas ? `<div class="hist-sintomas">${sintomas}</div>` : ""}
+            <div class="hist-bottom">
+              <span class="chip" style="background:${oPago.color}22;color:${oPago.color};border:1px solid ${oPago.color}55;">${oPago.label}</span>
+              <span class="hist-total">$${Number(o.total || 0).toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }).join("")
     : `<p class="msg">Este vehículo todavía no tiene órdenes de trabajo registradas.</p>`;
 
   return shellPage(`
@@ -130,7 +153,8 @@ function renderVehiculo(v, ot) {
 
     <div class="divider"></div>
 
-    ${filas}
+    <div class="hist-title">HISTORIAL DE ÓRDENES (${ots.length})</div>
+    ${historial}
 
     <p class="note">Esta información se actualiza en tiempo real. Para más detalle, contacta al taller.</p>
   `, `${placa} — Estado del vehículo`);
@@ -158,7 +182,7 @@ router.get("/:token", async (req, res) => {
 
     const otq = await pool.query(
       `SELECT
-         estado, pago_estado, total, created_at,
+         symptoms, estado, pago_estado, total, created_at,
          CASE
            WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
            WHEN estado = 'RECIBIDO'
@@ -171,13 +195,11 @@ router.get("/:token", async (req, res) => {
        FROM ordenes_trabajo
        WHERE placa = $1
        ORDER BY created_at DESC
-       LIMIT 1`,
+       LIMIT 25`,
       [v.placa]
     );
 
-    const ot = otq.rowCount ? otq.rows[0] : null;
-
-    return res.send(renderVehiculo(v, ot));
+    return res.send(renderVehiculo(v, otq.rows));
   } catch (e) {
     return res.status(500).send(renderNoEncontrado());
   }

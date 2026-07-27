@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'api_service.dart';
 import 'vehiculo_model.dart';
 import 'qr_utils.dart';
+import 'detalle_orden.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -32,12 +33,44 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   bool  _actualizandoKm = false;
   int   _kmActual       = 0;
 
+  bool _loadingOts = true;
+  String? _errorOts;
+  List<Map<String, dynamic>> _ots = [];
+
   @override
   void initState() {
     super.initState();
     _kmActual     = widget.vehiculo.kilometraje;
     _kmCtrl.text  = _kmActual.toString();
+    _cargarOts();
   }
+
+  Future<void> _cargarOts() async {
+    setState(() { _loadingOts = true; _errorOts = null; });
+    try {
+      final data = await ApiService.obtenerOtsDelVehiculo(widget.vehiculo.placa);
+      if (!mounted) return;
+      setState(() => _ots = data);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _errorOts = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingOts = false);
+    }
+  }
+
+  // Estados reales del backend: RECIBIDO, PENDIENTE, ENTREGADO.
+  Color _estadoOtColor(String estado) {
+    switch (estado) {
+      case 'RECIBIDO':  return const Color(0xFF00BFFF);
+      case 'PENDIENTE': return Colors.orangeAccent;
+      case 'ENTREGADO': return Colors.greenAccent;
+      default:          return _kWhite;
+    }
+  }
+
+  String _estadoOtLabel(String estado) =>
+      estado == 'PENDIENTE' ? 'EN PROCESO' : estado;
 
   @override
   void dispose() { _kmCtrl.dispose(); super.dispose(); }
@@ -463,6 +496,123 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     child: child,
   );
 
+  // ── Historial de OTs ──────────────────────────────────────────────────────
+  Widget _historialOtsCard() {
+    return _card(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: _secHeader("Historial de órdenes",
+          icon: Icons.receipt_long_rounded)),
+        if (_ots.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: _kBlue.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: _kBlue.withOpacity(0.28))),
+            child: Text("${_ots.length}", style: const TextStyle(
+              fontFamily: 'Ubuntu', color: _kBlue,
+              fontWeight: FontWeight.w700, fontSize: 11)),
+          ),
+      ]),
+      if (_loadingOts)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 18),
+          child: Center(child: SizedBox(width: 22, height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue))))
+      else if (_errorOts != null)
+        Column(children: [
+          Text(_errorOts!, style: TextStyle(fontFamily: 'Ubuntu',
+            color: _kWhite.withOpacity(0.45), fontSize: 12)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: _cargarOts,
+            child: Text("Reintentar", style: TextStyle(
+              fontFamily: 'Ubuntu', color: _kBlue.withOpacity(0.85),
+              fontWeight: FontWeight.w700, fontSize: 12)),
+          ),
+        ])
+      else if (_ots.isEmpty)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text("Sin órdenes registradas todavía.", style: TextStyle(
+            fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.35), fontSize: 12)),
+        )
+      else
+        Column(children: _ots.map(_otRow).toList()),
+    ]));
+  }
+
+  Widget _otRow(Map<String, dynamic> o) {
+    final id      = int.tryParse((o['id'] ?? '').toString()) ?? 0;
+    final estado  = (o['estado_ui'] ?? o['estado'] ?? '').toString().toUpperCase();
+    final pago    = (o['pago_estado'] ?? '').toString();
+    final total   = double.tryParse((o['total'] ?? 0).toString()) ?? 0;
+    final fecha   = DateTime.tryParse((o['created_at'] ?? '').toString());
+    final c       = _estadoOtColor(estado);
+    final isPend  = pago.toUpperCase().contains("PEND");
+
+    return GestureDetector(
+      onTap: () async {
+        final ok = await Navigator.push(context,
+          MaterialPageRoute(builder: (_) => DetalleOrdenPage(ordenId: id)));
+        if (ok == true) _cargarOts();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: c.withOpacity(0.18))),
+        child: Row(children: [
+          Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle, color: c.withOpacity(0.12)),
+            child: Center(child: Text("#$id", style: TextStyle(
+              fontFamily: 'Ubuntu', color: c,
+              fontWeight: FontWeight.w800, fontSize: 10))),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.withOpacity(0.10),
+                  border: Border.all(color: c.withOpacity(0.30)),
+                  borderRadius: BorderRadius.circular(6)),
+                child: Text(_estadoOtLabel(estado), style: TextStyle(
+                  fontFamily: 'Ubuntu', color: c,
+                  fontWeight: FontWeight.w700, fontSize: 10)),
+              ),
+              const SizedBox(width: 6),
+              Text(pago, style: TextStyle(
+                fontFamily: 'Ubuntu',
+                color: isPend ? Colors.orangeAccent : Colors.greenAccent,
+                fontWeight: FontWeight.w700, fontSize: 10)),
+            ]),
+            const SizedBox(height: 4),
+            Text(
+              fecha != null
+                  ? "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}"
+                  : "—",
+              style: TextStyle(fontFamily: 'Ubuntu',
+                color: _kWhite.withOpacity(0.35), fontSize: 11)),
+          ])),
+          Text("\$${total.toStringAsFixed(2)}", style: const TextStyle(
+            fontFamily: 'Ubuntu', color: _kBlue,
+            fontWeight: FontWeight.w800, fontSize: 13)),
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right_rounded,
+            color: _kBlue.withOpacity(0.35), size: 16),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final qrData = (widget.vehiculo.qrToken != null &&
@@ -594,6 +744,9 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
                   ),
                 ),
               ])),
+
+              // ── Historial de órdenes ─────────────────────────────────────
+              _historialOtsCard(),
 
               // ── Datos del vehículo ───────────────────────────────────────
               _card(child: Column(

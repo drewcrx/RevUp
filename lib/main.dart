@@ -6,7 +6,6 @@ import 'src/vehiculos.dart';
 import 'src/editar_perfil.dart';
 import 'src/agregar_vehiculo.dart';
 import 'src/scan_qr_page.dart';
-import 'src/detalle_qr_page.dart';
 import 'src/login_page.dart';
 import 'src/register_page.dart';
 import 'src/forgot_password_page.dart';
@@ -163,7 +162,6 @@ class MyApp extends StatelessWidget {
         '/vehiculos':        (_) => const VehiculosPage(),
         '/agregar_vehiculo': (_) => const AgregarVehiculoPage(),
         '/scanqr':           (_) => ScanQRPage(),
-        '/detalle_qr':       (_) => const DetalleQRPage(),
         '/forgot_password':  (_) => const ForgotPasswordPage(),
         '/forgot_username':  (_) => const ForgotUsernamePage(),
         '/cambiar_password': (_) => const CambiarPasswordPage(),

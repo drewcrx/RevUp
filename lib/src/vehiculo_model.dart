@@ -1,40 +1,5 @@
 import 'dart:convert';
 
-class Arreglo {
-  int? id;
-  String descripcion;
-  String tipo;
-  DateTime fecha;
-  bool completado;
-
-  Arreglo({
-    this.id,
-    required this.descripcion,
-    required this.tipo,
-    required this.fecha,
-    this.completado = false,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'descripcion': descripcion,
-      'tipo': tipo,
-      'fecha': fecha.toIso8601String(),
-      'completado': completado,
-    };
-  }
-
-  factory Arreglo.fromMap(Map<String, dynamic> map) {
-    return Arreglo(
-      id: map['id'] is int ? map['id'] : int.tryParse((map['id'] ?? '').toString()),
-      descripcion: (map['descripcion'] ?? '').toString(),
-      tipo: (map['tipo'] ?? '').toString(),
-      fecha: DateTime.tryParse((map['fecha'] ?? '').toString()) ?? DateTime.now(),
-      completado: map['completado'] == true,
-    );
-  }
-}
-
 class Vehiculo {
   int? id;
 
@@ -58,8 +23,6 @@ class Vehiculo {
   // QR activo
   String? qrToken;
 
-  List<Arreglo> arreglos;
-
   Vehiculo({
     this.id,
     required this.marca,
@@ -74,7 +37,6 @@ class Vehiculo {
     this.notaIngreso,
     this.tipoVehiculo,
     this.qrToken,
-    this.arreglos = const [],
   });
 
   factory Vehiculo.fromMap(Map<String, dynamic> map) {
@@ -100,12 +62,6 @@ class Vehiculo {
       tipoVehiculo: map['tipo_vehiculo']?.toString(),
 
       qrToken: map['qr_token']?.toString(),
-
-      arreglos: (map['arreglos'] is List)
-          ? (map['arreglos'] as List)
-              .map((e) => Arreglo.fromMap(Map<String, dynamic>.from(e)))
-              .toList()
-          : <Arreglo>[],
     );
   }
 
@@ -127,7 +83,6 @@ class Vehiculo {
       'tipo_vehiculo': tipoVehiculo,
 
       'qr_token': qrToken,
-      'arreglos': arreglos.map((e) => e.toMap()).toList(),
     };
   }
 

@@ -57,28 +57,6 @@ async function ensureVehiculoByQrOwnedOr404(req, token) {
   return q.rowCount ? q.rows[0] : null;
 }
 
-async function ensureArregloOwnedOr404(req, arregloId) {
-  const params = [arregloId];
-  let extra = "";
-
-  if (!isSuper(req)) {
-    params.push(req.user.id);
-    extra = " AND v.mechanic_id = $2";
-  }
-
-  const q = await pool.query(
-    `SELECT a.id
-     FROM arreglos a
-     JOIN vehiculos v ON v.placa = a.vehiculo_placa
-     WHERE a.id = $1
-     ${extra}
-     LIMIT 1`,
-    params
-  );
-
-  return q.rowCount ? q.rows[0] : null;
-}
-
 // ===========================
 // ✅ QR: Detalle + pendientes/recientes (privado)
 // (IMPORTANTE: DEBE IR ANTES DE "/:placa")
@@ -103,29 +81,8 @@ router.get("/qr/:token", async (req, res) => {
       [token]
     );
 
-    const placa = vehiculoRes.rows[0].placa;
-
-    const pendientesRes = await pool.query(
-      `SELECT id, descripcion, tipo, fecha, completado
-       FROM arreglos
-       WHERE vehiculo_placa = $1 AND completado = false
-       ORDER BY fecha DESC`,
-      [placa]
-    );
-
-    const recientesRes = await pool.query(
-      `SELECT id, descripcion, tipo, fecha, completado
-       FROM arreglos
-       WHERE vehiculo_placa = $1 AND completado = true
-       ORDER BY fecha DESC
-       LIMIT 5`,
-      [placa]
-    );
-
     res.json({
       vehiculo: vehiculoRes.rows[0],
-      pendientes: pendientesRes.rows,
-      recientes: recientesRes.rows,
     });
   } catch (error) {
     res.status(500).json({ error: "Error buscando por QR", detalle: error.message });
@@ -488,9 +445,10 @@ router.put("/:placa", async (req, res) => {
 });
 
 // ===========================
-// GET ARREGLOS DE UN VEHÍCULO (privado)
+// GET OTs DE UN VEHÍCULO POR PLACA (privado)
+// Usado por Detalle de Vehículo para mostrar el historial de órdenes.
 // ===========================
-router.get("/:placa/arreglos", async (req, res) => {
+router.get("/:placa/ordenes", async (req, res) => {
   const placa = String(req.params.placa || "").trim().toUpperCase();
   if (!placa) return res.status(400).json({ error: "placa inválida" });
 
@@ -499,73 +457,26 @@ router.get("/:placa/arreglos", async (req, res) => {
     if (!veh) return res.status(404).json({ error: "Vehículo no encontrado" });
 
     const result = await pool.query(
-      `SELECT *
-       FROM arreglos
-       WHERE vehiculo_placa = $1
-       ORDER BY fecha DESC`,
+      `SELECT
+         id, symptoms, estado, pago_estado, total, created_at, closed_at,
+         CASE
+           WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
+           WHEN estado = 'RECIBIDO'
+                AND (COALESCE(total_servicios,0) > 0
+                     OR COALESCE(total_repuestos,0) > 0
+                     OR COALESCE(total,0) > 0)
+             THEN 'PENDIENTE'
+           ELSE estado
+         END AS estado_ui
+       FROM ordenes_trabajo
+       WHERE placa = $1
+       ORDER BY created_at DESC`,
       [placa]
     );
 
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: "Error al obtener arreglos", detalle: error.message });
-  }
-});
-
-// ===========================
-// POST AGREGAR ARREGLO (privado)
-// ===========================
-router.post("/:placa/arreglos", async (req, res) => {
-  const placa = String(req.params.placa || "").trim().toUpperCase();
-  const { descripcion, tipo } = req.body || {};
-
-  if (!placa) return res.status(400).json({ error: "placa inválida" });
-  if (!descripcion || !tipo) {
-    return res.status(400).json({ error: "La descripción y el tipo son obligatorios" });
-  }
-
-  try {
-    const veh = await ensureVehiculoOwnedByUserOr404(req, placa);
-    if (!veh) return res.status(404).json({ error: "Vehículo no encontrado" });
-
-    await pool.query(
-      `INSERT INTO arreglos (vehiculo_placa, descripcion, tipo, completado)
-       VALUES ($1, $2, $3, false)`,
-      [placa, String(descripcion).trim(), String(tipo).trim()]
-    );
-
-    res.json({ mensaje: "Arreglo agregado correctamente" });
-  } catch (error) {
-    res.status(500).json({ error: "Error al agregar arreglo", detalle: error.message });
-  }
-});
-
-// ===========================
-// PUT CAMBIAR ESTADO ARREGLO (privado)
-// ===========================
-router.put("/arreglos/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isFinite(id)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const allowed = await ensureArregloOwnedOr404(req, id);
-    if (!allowed) return res.status(404).json({ error: "Arreglo no encontrado" });
-
-    const result = await pool.query(
-      `UPDATE arreglos
-       SET completado = NOT completado
-       WHERE id = $1
-       RETURNING *`,
-      [id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Arreglo no encontrado" });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: "Error al actualizar arreglo", detalle: error.message });
+    res.status(500).json({ error: "Error al obtener historial de OTs", detalle: error.message });
   }
 });
 
