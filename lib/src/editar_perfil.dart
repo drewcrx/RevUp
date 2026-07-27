@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'session.dart';
+import 'api_service.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -71,6 +72,7 @@ class _EditarPerfilPageState extends State<EditarPerfilPage> {
     try {
       final nuevoNombre = _nombreCtrl.text.trim();
       if (nuevoNombre.isEmpty) throw Exception("Nombre inválido");
+      await ApiService.actualizarPerfil(nombre: nuevoNombre, avatarB64: avatarB64 ?? '');
       await Session.updateNombre(nuevoNombre);
       await Session.updateAvatarB64(avatarB64);
       if (!mounted) return;

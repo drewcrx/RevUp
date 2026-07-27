@@ -7,6 +7,7 @@ import usuariosRouter from "./routes/usuarios.js";
 import ordenesRoutes from "./routes/ordenes.js";
 import reportesRoutes from "./routes/reportes.js";
 import publicoRoutes from "./routes/publico.js";
+import { ensureSchema } from "./db/connection.js";
 
 dotenv.config();
 
@@ -27,6 +28,11 @@ app.use("/usuarios", usuariosRouter);
 app.use("/v", publicoRoutes);
 
 const PORT = Number(process.env.PORT || 3000);
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`)
-);
+
+ensureSchema()
+  .catch((e) => console.error("Error preparando esquema de BD:", e.message))
+  .finally(() => {
+    app.listen(PORT, "0.0.0.0", () =>
+      console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`)
+    );
+  });

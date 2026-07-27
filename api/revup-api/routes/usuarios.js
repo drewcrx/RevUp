@@ -452,7 +452,7 @@ router.post("/login", async (req, res) => {
   }
 
   const q = await pool.query(
-    `SELECT id,nombre,correo,usuario,password_hash,verificado,role
+    `SELECT id,nombre,correo,usuario,password_hash,verificado,role,avatar_b64
      FROM usuarios WHERE usuario=$1 OR correo=$1`,
     [identidad]
   );
@@ -479,8 +479,53 @@ router.post("/login", async (req, res) => {
       correo: user.correo,
       usuario: user.usuario,
       role: user.role || "mechanic",
+      avatar_b64: user.avatar_b64 || null,
     },
   });
+});
+
+//
+// =========================
+// EDITAR PERFIL (con sesión activa) — nombre y/o avatar
+// =========================
+//
+router.put("/perfil", requireAuth, async (req, res) => {
+  const nombre = req.body?.nombre !== undefined
+    ? String(req.body.nombre).trim()
+    : undefined;
+  const avatarB64 = req.body?.avatar_b64 !== undefined
+    ? req.body.avatar_b64
+    : undefined;
+
+  if (nombre === undefined && avatarB64 === undefined) {
+    return res.status(400).json({ error: "No hay campos para actualizar" });
+  }
+  if (nombre !== undefined && nombre.length === 0) {
+    return res.status(400).json({ error: "El nombre no puede estar vacío" });
+  }
+
+  const sets = [];
+  const params = [];
+  let idx = 1;
+  if (nombre !== undefined) { sets.push(`nombre = $${idx++}`); params.push(nombre); }
+  if (avatarB64 !== undefined) { sets.push(`avatar_b64 = $${idx++}`); params.push(avatarB64); }
+  params.push(req.user.id);
+
+  try {
+    const q = await pool.query(
+      `UPDATE usuarios
+       SET ${sets.join(", ")}
+       WHERE id = $${idx}
+       RETURNING id, nombre, correo, usuario, role, avatar_b64`,
+      params
+    );
+
+    if (q.rowCount === 0) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    return res.json({ mensaje: "Perfil actualizado", user: q.rows[0] });
+  } catch (e) {
+    return res.status(500).json({ error: "Error actualizando perfil", detalle: e.message });
+  }
 });
 
 //

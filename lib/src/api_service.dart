@@ -351,6 +351,30 @@ class ApiService {
     }
   }
 
+  /// Actualiza nombre y/o avatar del usuario logueado. Devuelve el usuario
+  /// actualizado (para refrescar la sesión local), o null + mensaje de error.
+  static Future<Map<String, dynamic>?> actualizarPerfil({
+    String? nombre,
+    String? avatarB64,
+  }) async {
+    final url = Uri.parse("$baseUrl/usuarios/perfil");
+
+    final Map<String, dynamic> body = {};
+    if (nombre != null) body['nombre'] = nombre;
+    if (avatarB64 != null) body['avatar_b64'] = avatarB64;
+
+    final res = await http
+        .put(url, headers: _headersAuth(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 10));
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return data['user'] as Map<String, dynamic>;
+    }
+
+    throw _httpError(res, "No se pudo actualizar el perfil");
+  }
+
   /// Cambia la contraseña del usuario logueado (requiere la actual).
   static Future<String?> cambiarPassword({
     required String currentPassword,
