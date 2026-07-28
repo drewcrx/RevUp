@@ -93,6 +93,7 @@ cd /opt/revup
 git pull origin main
 docker compose pull
 docker compose up -d --remove-orphans
+docker compose restart traefik
 docker image prune -f
 ```
 
