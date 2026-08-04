@@ -69,6 +69,9 @@ function shellPage(bodyHtml, title) {
       border:1px solid rgba(30,144,255,0.30);color:${kBlue};font-weight:800;font-size:18px;letter-spacing:1.5px;
     }
     .subtitle{margin-top:10px;font-size:13px;color:rgba(240,244,255,0.45);}
+    .ficha{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px;}
+    .ficha .k{font-size:10px;color:rgba(240,244,255,0.35);text-transform:uppercase;letter-spacing:0.5px;}
+    .ficha .v{font-size:13px;color:${kWhite};font-weight:700;margin-top:2px;}
     .chips{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;}
     .chip{padding:6px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.5px;}
     .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(30,144,255,0.14),transparent);margin:20px 0;}
@@ -93,6 +96,10 @@ function shellPage(bodyHtml, title) {
     .dano-item{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:rgba(255,167,38,0.05);border:1px solid rgba(255,167,38,0.18);}
     .dano-top{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#FFA726;font-weight:700;}
     .dano-obs{margin-top:4px;font-size:11px;color:rgba(240,244,255,0.55);line-height:1.4;}
+    .trabajo-grupo{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(30,144,255,0.14);}
+    .trabajo-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.35);margin-bottom:6px;}
+    .trabajo-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;color:rgba(240,244,255,0.65);}
+    .trabajo-item .precio{color:${kBlue};font-weight:700;flex-shrink:0;}
     .note{margin-top:18px;font-size:11px;color:rgba(240,244,255,0.28);line-height:1.5;text-align:center;}
     .card-footer{
       padding:12px 22px;border-top:1px solid rgba(30,144,255,0.08);background:#060B18;
@@ -138,6 +145,20 @@ function renderVehiculo(v, ots) {
   const nombreVehiculo = escapeHtml([v.marca, v.modelo].filter(Boolean).join(" ") || "Vehículo");
   const detalles = escapeHtml([v.anio, v.color].filter(Boolean).join(" · "));
 
+  const fichaCampos = [
+    ["Kilometraje", Number(v.kilometraje || 0) > 0 ? `${Number(v.kilometraje).toLocaleString("es-EC")} km` : null],
+    ["Tipo", v.tipo_vehiculo],
+    ["Combustible", v.tipo_combustible],
+    ["Transmisión", v.transmision],
+    ["Cilindraje", v.cilindraje],
+  ].filter(([, val]) => val);
+  const ficha = fichaCampos.length ? `
+    <div class="ficha">
+      ${fichaCampos.map(([k, val]) => `
+        <div><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(val))}</div></div>
+      `).join("")}
+    </div>` : "";
+
   const historial = ots.length
     ? ots.map((o) => {
         const oEst  = estadoInfo(o.estado_ui);
@@ -155,6 +176,23 @@ function renderVehiculo(v, ots) {
             <div class="fotos-grid">
               ${fotos.map((f) => `<a href="${f.url}" target="_blank" rel="noopener"><img src="${f.url}" loading="lazy" /></a>`).join("")}
             </div>
+          </div>` : "";
+
+        const servicios = o.servicios || [];
+        const repuestos = o.repuestos || [];
+        const trabajo = (servicios.length || repuestos.length) ? `
+          <div class="trabajo-grupo">
+            <div class="trabajo-label">TRABAJO REALIZADO</div>
+            ${servicios.map((s) => `
+              <div class="trabajo-item">
+                <span>${escapeHtml(s.descripcion || "Servicio")}</span>
+                <span class="precio">$${Number(s.precio || 0).toFixed(2)}</span>
+              </div>`).join("")}
+            ${repuestos.map((r) => `
+              <div class="trabajo-item">
+                <span>${escapeHtml(r.nombre || "Repuesto")}${Number(r.cantidad || 1) > 1 ? ` ×${Number(r.cantidad)}` : ""}</span>
+                <span class="precio">$${(Number(r.precio_unitario || 0) * Number(r.cantidad || 1)).toFixed(2)}</span>
+              </div>`).join("")}
           </div>` : "";
 
         const danos = o.danos || [];
@@ -194,6 +232,7 @@ function renderVehiculo(v, ots) {
               <span class="chip" style="background:${oPago.color}22;color:${oPago.color};border:1px solid ${oPago.color}55;">${oPago.label}</span>
               <span class="hist-total">$${Number(o.total || 0).toFixed(2)}</span>
             </div>
+            ${trabajo}
             ${grupoFotos("Al ingresar", fotosIngreso)}
             ${grupoFotos("Al entregar", fotosEntrega)}
             ${grupoDanos}
@@ -205,6 +244,7 @@ function renderVehiculo(v, ots) {
   return shellPage(`
     <span class="placa">${placa}</span>
     <div class="subtitle">${nombreVehiculo}${detalles ? " · " + detalles : ""}</div>
+    ${ficha}
 
     <div class="chips">
       <span class="chip" style="background:${est.color}22;color:${est.color};border:1px solid ${est.color}55;">${est.label}</span>
@@ -226,7 +266,8 @@ router.get("/:token", async (req, res) => {
 
   try {
     const vq = await pool.query(
-      `SELECT v.placa, v.marca, v.modelo, v.anio, v.color
+      `SELECT v.placa, v.marca, v.modelo, v.anio, v.color, v.kilometraje,
+              v.tipo_vehiculo, v.tipo_combustible, v.transmision, v.cilindraje
        FROM vehiculos v
        JOIN vehiculo_qr q ON q.vehiculo_id = v.id
        WHERE q.qr_token = $1 AND q.activo = true
@@ -294,6 +335,24 @@ router.get("/:token", async (req, res) => {
         }
       }
       for (const o of ots) o.danos = danosPorOrden[o.id] || [];
+
+      const sq = await pool.query(
+        `SELECT orden_id, descripcion, precio FROM orden_servicios
+         WHERE orden_id = ANY($1::int[]) ORDER BY created_at ASC`,
+        [ids]
+      );
+      const serviciosPorOrden = {};
+      for (const s of sq.rows) (serviciosPorOrden[s.orden_id] ??= []).push(s);
+      for (const o of ots) o.servicios = serviciosPorOrden[o.id] || [];
+
+      const rq = await pool.query(
+        `SELECT orden_id, nombre, cantidad, precio_unitario FROM orden_repuestos
+         WHERE orden_id = ANY($1::int[]) ORDER BY created_at ASC`,
+        [ids]
+      );
+      const repuestosPorOrden = {};
+      for (const r of rq.rows) (repuestosPorOrden[r.orden_id] ??= []).push(r);
+      for (const o of ots) o.repuestos = repuestosPorOrden[o.id] || [];
     }
 
     return res.send(renderVehiculo(v, ots));
