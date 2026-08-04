@@ -11,7 +11,7 @@ router.use(requireAuth);
 
 const CATEGORIAS_VALIDAS = new Set([
   "color", "tipo_vehiculo", "combustible", "transmision",
-  "estado_dano", "tipo_reparacion",
+  "estado_dano", "tipo_reparacion", "sintoma_comun",
 ]);
 
 // GET /catalogos/marcas

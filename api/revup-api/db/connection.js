@@ -39,6 +39,13 @@ const ITEMS_FLAT = {
   transmision: ["Manual", "Automática", "CVT", "Otro"],
   estado_dano: ["Rayón", "Abolladura", "Rotura", "Óxido", "Desgaste", "Golpe", "Otro"],
   tipo_reparacion: ["Pintura", "Reemplazo", "Reparación / Enderezada", "Pulido", "Soldadura", "Otro"],
+  sintoma_comun: [
+    "No enciende", "Batería descargada", "Falla al arrancar en frío",
+    "Ruido en el motor", "Ruido en frenos", "Vibración al frenar",
+    "Fuga de líquido", "Humo en el escape", "Luces de tablero encendidas",
+    "Aire acondicionado no enfría", "Cambio de aceite", "Cambio de llantas",
+    "Alineación y balanceo", "Revisión general",
+  ],
 };
 
 const REPUESTOS = [

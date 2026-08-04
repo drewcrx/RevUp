@@ -23,12 +23,41 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   final _km       = TextEditingController();
   bool  loading   = false;
 
+  List<String> _sintomasCatalogo = [];
+
   bool get _placaBloqueada =>
       widget.placaInicial != null && widget.placaInicial!.trim().isNotEmpty;
+
+  bool _sintomaActivo(String s) => _symptoms.text.contains(s);
+
+  void _toggleSintoma(String s) {
+    setState(() {
+      if (_sintomaActivo(s)) {
+        var t = _symptoms.text.replaceAll(s, '');
+        t = t.replaceAll(RegExp(r',\s*,'), ',').replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '');
+        _symptoms.text = t;
+      } else {
+        final cur = _symptoms.text.trim();
+        _symptoms.text = cur.isEmpty ? s : '$cur, $s';
+      }
+      _symptoms.selection = TextSelection.collapsed(offset: _symptoms.text.length);
+    });
+  }
+
+  Future<void> _cargarSintomasComunes() async {
+    try {
+      final items = await ApiService.obtenerCatalogoItems('sintoma_comun');
+      if (!mounted) return;
+      setState(() => _sintomasCatalogo = items);
+    } catch (_) {
+      // Si no cargan, el mecánico igual puede escribir el síntoma a mano.
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _cargarSintomasComunes();
     if (_placaBloqueada) {
       _placa.text = widget.placaInicial!.trim().toUpperCase();
       // Se precarga el último kilometraje conocido como punto de partida,
@@ -302,7 +331,34 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
 
                   // ── Campo: síntomas ────────────────────────────────────
                   _fieldLabel("Síntomas reportados", Icons.report_problem_rounded),
-                  const SizedBox(height: 8),
+                  if (_sintomasCatalogo.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Wrap(spacing: 8, runSpacing: 8, children: _sintomasCatalogo.map((s) {
+                      final activo = _sintomaActivo(s);
+                      return GestureDetector(
+                        onTap: () => _toggleSintoma(s),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: activo ? _kBlue.withOpacity(0.18) : _kBlue.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: activo
+                                ? _kBlue.withOpacity(0.6) : _kBlue.withOpacity(0.20)),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            if (activo) ...[
+                              const Icon(Icons.check_rounded, color: _kBlue, size: 13),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(s, style: TextStyle(fontFamily: 'Ubuntu',
+                              color: activo ? _kWhite : _kWhite.withOpacity(0.55),
+                              fontWeight: activo ? FontWeight.w700 : FontWeight.w500, fontSize: 12)),
+                          ]),
+                        ),
+                      );
+                    }).toList()),
+                  ],
+                  const SizedBox(height: 10),
                   TextField(
                     controller: _symptoms,
                     maxLines: 6,
