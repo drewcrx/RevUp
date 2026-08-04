@@ -81,6 +81,8 @@ services:
       MAIL_PASS: ${MAIL_PASS}
       MAIL_FROM_NAME: RevUp
       MAIL_FROM_EMAIL: ${MAIL_USER}
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       - db
     networks:
@@ -101,6 +103,7 @@ volumes:
   letsencrypt:
   portainer_data:
   postgres_data:
+  uploads_data:
 
 networks:
   proxy:

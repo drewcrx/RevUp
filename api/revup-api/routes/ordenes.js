@@ -1,5 +1,9 @@
 // routes/ordenes.js (COMPLETO) — OT privadas por mecánico + superuser ve todo
 import express from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import crypto from "crypto";
 import { pool } from "../db/connection.js";
 import { requireAuth } from "../src/middleware/auth.js";
 
@@ -7,6 +11,43 @@ const router = express.Router();
 
 // 🔒 TODO este módulo requiere auth
 router.use(requireAuth);
+
+// =========================
+// Fotos de OT — almacenamiento en disco (volumen persistente)
+// =========================
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+
+const fotosStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dir = path.join(UPLOAD_DIR, `ot_${req.params.id}`);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const uploadFotos = multer({
+  storage: fotosStorage,
+  limits: { fileSize: 8 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Solo se permiten imágenes"));
+    }
+    cb(null, true);
+  },
+});
+
+// Envuelve multer para que sus errores (archivo muy grande, tipo inválido)
+// respondan JSON en vez de tumbar la request con la página de error de Express.
+function subirFotosMiddleware(req, res, next) {
+  uploadFotos.array("fotos", 10)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || "Error subiendo archivo" });
+    next();
+  });
+}
 
 // =========================
 // Helpers
@@ -253,14 +294,95 @@ router.get("/:id", async (req, res) => {
       [id]
     );
 
+    const fotos = await pool.query(
+      `SELECT id, tipo, ruta, created_at
+       FROM orden_fotos
+       WHERE orden_id = $1
+       ORDER BY created_at ASC`,
+      [id]
+    );
+
     return res.json({
       ot,
       servicios: servicios.rows,
       repuestos: repuestos.rows,
       pagos: pagos.rows,
+      fotos: fotos.rows.map((f) => ({ ...f, url: fotoUrl(f.ruta) })),
     });
   } catch (e) {
     return res.status(500).json({ error: "Error cargando detalle", detalle: e.message });
+  }
+});
+
+// =========================
+// 3b) Fotos de la OT: subir / listar / eliminar
+// =========================
+function fotoUrl(ruta) {
+  const base = process.env.APP_URL || "";
+  return `${base}/uploads/${ruta}`;
+}
+
+router.post("/:id/fotos", subirFotosMiddleware, async (req, res) => {
+  const ordenId = Number(req.params.id);
+  const tipo = String(req.body?.tipo || "").trim();
+
+  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
+  if (!["ingreso", "entrega"].includes(tipo)) {
+    return res.status(400).json({ error: "tipo debe ser 'ingreso' o 'entrega'" });
+  }
+
+  try {
+    const ot = await getOtIfAllowed(ordenId, req.user);
+    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
+
+    const files = req.files || [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: "No se recibió ninguna foto" });
+    }
+
+    const inserted = [];
+    for (const file of files) {
+      const relPath = `ot_${ordenId}/${file.filename}`;
+      const q = await pool.query(
+        `INSERT INTO orden_fotos (orden_id, tipo, ruta)
+         VALUES ($1, $2, $3)
+         RETURNING id, tipo, ruta, created_at`,
+        [ordenId, tipo, relPath]
+      );
+      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
+    }
+
+    return res.status(201).json(inserted);
+  } catch (e) {
+    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
+  }
+});
+
+router.delete("/fotos/:fotoId", async (req, res) => {
+  const fotoId = Number(req.params.fotoId);
+  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const f = await pool.query(
+      `SELECT f.id, f.ruta, f.orden_id
+       FROM orden_fotos f
+       JOIN ordenes_trabajo o ON o.id = f.orden_id
+       WHERE f.id = $1`,
+      [fotoId]
+    );
+    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
+
+    const allowed = await getOtIfAllowed(f.rows[0].orden_id, req.user);
+    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
+
+    await pool.query(`DELETE FROM orden_fotos WHERE id = $1`, [fotoId]);
+
+    const fullPath = path.join(UPLOAD_DIR, f.rows[0].ruta);
+    fs.unlink(fullPath, () => {}); // best-effort, no bloquea la respuesta
+
+    return res.json({ mensaje: "Foto eliminada" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
   }
 });
 

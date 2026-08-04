@@ -6,6 +6,9 @@
 node_modules/
 **/node_modules/
 
+# Fotos subidas en desarrollo local (en producción viven en un volumen Docker)
+api/revup-api/uploads/
+
 # Miscellaneous
 *.class
 *.log

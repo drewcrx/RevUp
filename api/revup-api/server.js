@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 
 import router from "./routes/vehiculos.js";
 import usuariosRouter from "./routes/usuarios.js";
@@ -21,6 +22,10 @@ app.use((req, res, next) => {
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Fotos de OT (público — el mismo link se comparte en el QR del cliente)
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
+app.use("/uploads", express.static(UPLOAD_DIR));
 
 app.use("/reportes", reportesRoutes);
 app.use("/ordenes", ordenesRoutes);

@@ -1,6 +1,7 @@
 // api_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 
 import 'vehiculo_model.dart';
 import 'session.dart';
@@ -673,6 +674,44 @@ class ApiService {
     }
 
     throw _httpError(res, "Error cerrando OT");
+  }
+
+  /// tipo: 'ingreso' | 'entrega'
+  static Future<List<Map<String, dynamic>>> subirFotosOT({
+    required int ordenId,
+    required String tipo,
+    required List<XFile> archivos,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/$ordenId/fotos");
+    final request = http.MultipartRequest('POST', url);
+
+    final t = Session.token;
+    if (t != null && t.trim().isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $t';
+    }
+    request.fields['tipo'] = tipo;
+    for (final archivo in archivos) {
+      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+    }
+
+    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final res = await http.Response.fromStream(streamed);
+
+    if (res.statusCode == 201) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "No se pudieron subir las fotos");
+  }
+
+  static Future<void> eliminarFotoOT(int fotoId) async {
+    final url = Uri.parse("$baseUrl/ordenes/fotos/$fotoId");
+    final res = await http
+        .delete(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo eliminar la foto");
+    }
   }
 
   // =========================

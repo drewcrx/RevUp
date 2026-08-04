@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'api_service.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
@@ -43,6 +44,79 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       (data?['repuestos'] as List? ?? []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get pagos =>
       (data?['pagos'] as List? ?? []).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get fotos =>
+      (data?['fotos'] as List? ?? []).cast<Map<String, dynamic>>();
+
+  bool _subiendoFotos = false;
+  final _picker = ImagePicker();
+
+  Future<void> _agregarFotos(String tipo) async {
+    final origen = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: const Color(0xFF0D1420),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_rounded, color: _kBlue),
+            title: const Text("Tomar foto", style: TextStyle(
+              fontFamily: 'Ubuntu', color: _kWhite)),
+            onTap: () => Navigator.pop(ctx, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_rounded, color: _kBlue),
+            title: const Text("Elegir de la galería", style: TextStyle(
+              fontFamily: 'Ubuntu', color: _kWhite)),
+            onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (origen == null) return;
+
+    List<XFile> archivos = [];
+    try {
+      if (origen == ImageSource.camera) {
+        final foto = await _picker.pickImage(
+          source: ImageSource.camera, imageQuality: 75, maxWidth: 1600);
+        if (foto != null) archivos = [foto];
+      } else {
+        archivos = await _picker.pickMultiImage(imageQuality: 75, maxWidth: 1600);
+      }
+    } catch (e) {
+      _snack("No se pudo abrir la cámara/galería: $e", error: true);
+      return;
+    }
+    if (archivos.isEmpty) return;
+
+    setState(() => _subiendoFotos = true);
+    try {
+      await ApiService.subirFotosOT(
+        ordenId: widget.ordenId, tipo: tipo, archivos: archivos);
+      if (!mounted) return;
+      await _load();
+      _snack("${archivos.length} foto(s) subida(s)");
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString(), error: true);
+    } finally {
+      if (mounted) setState(() => _subiendoFotos = false);
+    }
+  }
+
+  Future<void> _eliminarFoto(int fotoId) async {
+    try {
+      await ApiService.eliminarFotoOT(fotoId);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString(), error: true);
+    }
+  }
 
   String _money(dynamic v) {
     final n = double.tryParse(v?.toString() ?? "0") ?? 0;
@@ -589,6 +663,16 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       fontSize: 13, height: 1.5)),
                 ])),
 
+                // ── Fotos ─────────────────────────────────────────────────
+                _card(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  _section("Fotos", fotos.length, Icons.photo_camera_rounded),
+                  _fotosGrupo("Al ingresar", "ingreso"),
+                  const SizedBox(height: 14),
+                  _fotosGrupo("Al entregar", "entrega"),
+                ])),
+
                 // ── Botones de acción ────────────────────────────────────
                 _card(child: Column(children: [
                   Row(children: [
@@ -796,6 +880,87 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.25),
       fontSize: 12))),
   );
+
+  // ── Grupo de fotos (ingreso / entrega) ─────────────────────────────────────
+  Widget _fotosGrupo(String label, String tipo) {
+    final items = fotos.where((f) => f['tipo'] == tipo).toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text(label, style: TextStyle(
+          fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.55),
+          fontWeight: FontWeight.w600, fontSize: 12))),
+        if (_subiendoFotos)
+          const SizedBox(width: 14, height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue))
+        else
+          GestureDetector(
+            onTap: () => _agregarFotos(tipo),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.add_a_photo_rounded, color: _kBlue, size: 15),
+              const SizedBox(width: 4),
+              Text("Agregar", style: TextStyle(fontFamily: 'Ubuntu',
+                color: _kBlue.withOpacity(0.90),
+                fontWeight: FontWeight.w700, fontSize: 12)),
+            ]),
+          ),
+      ]),
+      const SizedBox(height: 8),
+      if (items.isEmpty)
+        Text("Sin fotos todavía", style: TextStyle(fontFamily: 'Ubuntu',
+          color: _kWhite.withOpacity(0.25), fontSize: 11))
+      else
+        SizedBox(
+          height: 78,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final f = items[i];
+              final url = (f['url'] ?? '').toString();
+              final fotoId = int.tryParse((f['id'] ?? '').toString());
+              return Stack(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: url.isEmpty
+                      ? Container(width: 78, height: 78,
+                          color: _kBlue.withOpacity(0.06),
+                          child: Icon(Icons.image_rounded,
+                            color: _kWhite.withOpacity(0.20)))
+                      : Image.network(url, width: 78, height: 78, fit: BoxFit.cover,
+                          loadingBuilder: (ctx, child, progress) =>
+                              progress == null ? child : Container(
+                                width: 78, height: 78,
+                                color: _kBlue.withOpacity(0.06),
+                                child: const Center(child: SizedBox(
+                                  width: 16, height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: _kBlue)))),
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 78, height: 78,
+                            color: _kBlue.withOpacity(0.06),
+                            child: Icon(Icons.broken_image_rounded,
+                              color: _kWhite.withOpacity(0.20))),
+                        ),
+                ),
+                if (fotoId != null)
+                  Positioned(right: 3, top: 3, child: GestureDetector(
+                    onTap: () => _eliminarFoto(fotoId),
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: Colors.black54, shape: BoxShape.circle),
+                      child: const Icon(Icons.close_rounded,
+                        color: Colors.white, size: 13),
+                    ),
+                  )),
+              ]);
+            },
+          ),
+        ),
+    ]);
+  }
 }
 
 // ─── Diálogo reutilizable RevUp ───────────────────────────────────────────────

@@ -75,6 +75,11 @@ function shellPage(bodyHtml, title) {
     .hist-sintomas{margin-top:6px;font-size:12px;color:rgba(240,244,255,0.60);line-height:1.4;}
     .hist-bottom{margin-top:8px;display:flex;justify-content:space-between;align-items:center;}
     .hist-total{font-size:13px;font-weight:800;color:${kBlue};}
+    .fotos-grupo{margin-top:10px;}
+    .fotos-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.35);margin-bottom:5px;}
+    .fotos-grid{display:flex;gap:6px;flex-wrap:wrap;}
+    .fotos-grid a{display:block;width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(30,144,255,0.20);}
+    .fotos-grid img{width:100%;height:100%;object-fit:cover;display:block;}
     .note{margin-top:18px;font-size:11px;color:rgba(240,244,255,0.28);line-height:1.5;text-align:center;}
     .card-footer{
       padding:12px 22px;border-top:1px solid rgba(30,144,255,0.08);background:#060B18;
@@ -128,6 +133,17 @@ function renderVehiculo(v, ots) {
         const km = Number(o.kilometraje_ot || 0) > 0
           ? `${Number(o.kilometraje_ot).toLocaleString("es-EC")} km` : "";
         const sintomas = escapeHtml(o.symptoms || "");
+        const fotosIngreso = (o.fotos || []).filter((f) => f.tipo === "ingreso");
+        const fotosEntrega = (o.fotos || []).filter((f) => f.tipo === "entrega");
+
+        const grupoFotos = (label, fotos) => fotos.length ? `
+          <div class="fotos-grupo">
+            <div class="fotos-label">${label} (${fotos.length})</div>
+            <div class="fotos-grid">
+              ${fotos.map((f) => `<a href="${f.url}" target="_blank" rel="noopener"><img src="${f.url}" loading="lazy" /></a>`).join("")}
+            </div>
+          </div>` : "";
+
         return `
           <div class="hist-item">
             <div class="hist-top">
@@ -139,6 +155,8 @@ function renderVehiculo(v, ots) {
               <span class="chip" style="background:${oPago.color}22;color:${oPago.color};border:1px solid ${oPago.color}55;">${oPago.label}</span>
               <span class="hist-total">$${Number(o.total || 0).toFixed(2)}</span>
             </div>
+            ${grupoFotos("Al ingresar", fotosIngreso)}
+            ${grupoFotos("Al entregar", fotosEntrega)}
           </div>
         `;
       }).join("")
@@ -184,7 +202,7 @@ router.get("/:token", async (req, res) => {
 
     const otq = await pool.query(
       `SELECT
-         symptoms, estado, pago_estado, total, kilometraje_ot, created_at,
+         id, symptoms, estado, pago_estado, total, kilometraje_ot, created_at,
          CASE
            WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
            WHEN estado = 'RECIBIDO'
@@ -201,7 +219,22 @@ router.get("/:token", async (req, res) => {
       [v.placa]
     );
 
-    return res.send(renderVehiculo(v, otq.rows));
+    const ots = otq.rows;
+    if (ots.length) {
+      const ids = ots.map((o) => o.id);
+      const fq = await pool.query(
+        `SELECT orden_id, tipo, ruta FROM orden_fotos WHERE orden_id = ANY($1::int[])`,
+        [ids]
+      );
+      const base = process.env.APP_URL || "";
+      const porOrden = {};
+      for (const f of fq.rows) {
+        (porOrden[f.orden_id] ??= []).push({ tipo: f.tipo, url: `${base}/uploads/${f.ruta}` });
+      }
+      for (const o of ots) o.fotos = porOrden[o.id] || [];
+    }
+
+    return res.send(renderVehiculo(v, ots));
   } catch (e) {
     return res.status(500).send(renderNoEncontrado());
   }

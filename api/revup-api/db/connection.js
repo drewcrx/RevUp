@@ -115,6 +115,17 @@ export async function ensureSchema() {
     )
   `);
 
+  // Fotos de la OT (ingreso / entrega)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orden_fotos (
+      id SERIAL PRIMARY KEY,
+      orden_id INTEGER NOT NULL REFERENCES ordenes_trabajo(id) ON DELETE CASCADE,
+      tipo TEXT NOT NULL CHECK (tipo IN ('ingreso', 'entrega')),
+      ruta TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await seedCatalogos();
 }
 
