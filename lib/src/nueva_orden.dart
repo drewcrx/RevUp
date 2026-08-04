@@ -20,6 +20,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   // ════════════════════════ LÓGICA ORIGINAL INTACTA ════════════════════════ //
   final _placa    = TextEditingController();
   final _symptoms = TextEditingController();
+  final _km       = TextEditingController();
   bool  loading   = false;
 
   bool get _placaBloqueada =>
@@ -28,7 +29,16 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   @override
   void initState() {
     super.initState();
-    if (_placaBloqueada) _placa.text = widget.placaInicial!.trim().toUpperCase();
+    if (_placaBloqueada) {
+      _placa.text = widget.placaInicial!.trim().toUpperCase();
+      // Se precarga el último kilometraje conocido como punto de partida,
+      // pero el mecánico lo corrige al kilometraje real con el que llega
+      // el auto esta vez.
+      ApiService.buscarPorPlaca(_placa.text).then((v) {
+        if (!mounted || v == null || v.kilometraje <= 0) return;
+        setState(() => _km.text = v.kilometraje.toString());
+      }).catchError((_) {});
+    }
     // Animación de entrada
     _entryCtr = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 1100));
@@ -44,6 +54,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   void dispose() {
     _placa.dispose();
     _symptoms.dispose();
+    _km.dispose();
     _entryCtr.dispose();
     super.dispose();
   }
@@ -51,10 +62,11 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   Future<void> _crear() async {
     final placa    = _placa.text.trim().toUpperCase();
     final symptoms = _symptoms.text.trim();
+    final km       = int.tryParse(_km.text.trim());
 
-    if (placa.isEmpty || symptoms.isEmpty) {
+    if (placa.isEmpty || symptoms.isEmpty || km == null || km <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Completa placa y síntomas',
+        content: const Text('Completa placa, kilometraje y síntomas',
           style: TextStyle(fontFamily: 'Ubuntu')),
         backgroundColor: Colors.red.shade900,
         behavior: SnackBarBehavior.floating,
@@ -65,7 +77,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
 
     setState(() => loading = true);
     try {
-      final ot = await ApiService.crearOrden(placa: placa, symptoms: symptoms);
+      final ot = await ApiService.crearOrden(placa: placa, symptoms: symptoms, kilometraje: km);
       if (!mounted) return;
       final ordenId = int.tryParse((ot['id'] ?? '').toString());
       if (ordenId != null) {
@@ -258,6 +270,33 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
                           color: _kWhite.withOpacity(0.25), fontSize: 11)),
                     ]),
                   ],
+
+                  const SizedBox(height: 22),
+
+                  // ── Campo: kilometraje de ingreso ───────────────────────
+                  _fieldLabel("Kilometraje con el que llega", Icons.speed_rounded),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _km,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontFamily: 'Ubuntu',
+                      color: _kWhite, fontSize: 14, fontWeight: FontWeight.w700),
+                    decoration: InputDecoration(
+                      hintText: "Ej: 85000",
+                      hintStyle: TextStyle(fontFamily: 'Ubuntu',
+                        color: _kWhite.withOpacity(0.25), fontSize: 13),
+                      prefixIcon: Icon(Icons.speed_rounded,
+                        color: _kBlue.withOpacity(0.75), size: 20),
+                      filled: true, fillColor: _kBlue.withOpacity(0.06),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(11),
+                        borderSide: BorderSide(color: _kBlue.withOpacity(0.28))),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(11),
+                        borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                    ),
+                  ),
 
                   const SizedBox(height: 22),
 

@@ -646,18 +646,18 @@ class ApiService {
   static Future<Map<String, dynamic>> crearOrden({
     required String placa,
     required String symptoms,
+    int? kilometraje,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes");
 
+    final body = <String, dynamic>{
+      "placa": placa.toUpperCase(),
+      "symptoms": symptoms,
+    };
+    if (kilometraje != null) body["kilometraje"] = kilometraje;
+
     final res = await http
-        .post(
-          url,
-          headers: _headersAuth(),
-          body: jsonEncode({
-            "placa": placa.toUpperCase(),
-            "symptoms": symptoms,
-          }),
-        )
+        .post(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
 
     // ignore: avoid_print

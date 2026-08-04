@@ -243,7 +243,7 @@ async function getOtIfAllowed(ordenId, user) {
 // =========================
 router.post("/", async (req, res) => {
   try {
-    const { placa, symptoms } = req.body;
+    const { placa, symptoms, kilometraje } = req.body;
 
     if (!placa || !symptoms) {
       return res.status(400).json({ error: "Faltan datos (placa, symptoms)" });
@@ -256,17 +256,27 @@ router.post("/", async (req, res) => {
 
     const placaUpper = String(placa).toUpperCase();
 
-    // ✅ NUEVO: KM snapshot para esta OT
-    const vk = await pool.query(
-      `SELECT kilometraje
-       FROM vehiculos
-       WHERE placa = $1
-       LIMIT 1`,
-      [placaUpper]
-    );
+    // El kilometraje con el que llega el auto se registra aquí, al crear la
+    // OT (que es cuando el auto está físicamente presente) — no se asume
+    // el valor guardado del vehículo, que puede estar desactualizado desde
+    // la última visita. Si viene en el body, además se sincroniza con
+    // vehiculos.kilometraje para que quede al día.
+    const kmIngreso = Number.isFinite(Number(kilometraje)) && Number(kilometraje) > 0
+      ? Number(kilometraje) : null;
 
-    // si no existe vehículo, kmOt queda null (igual deja crear OT, como tú quieras)
-    const kmOt = vk.rowCount ? Number(vk.rows[0].kilometraje || 0) : null;
+    let kmOt = kmIngreso;
+    if (kmIngreso !== null) {
+      await pool.query(
+        `UPDATE vehiculos SET kilometraje = $1 WHERE placa = $2`,
+        [kmIngreso, placaUpper]
+      );
+    } else {
+      const vk = await pool.query(
+        `SELECT kilometraje FROM vehiculos WHERE placa = $1 LIMIT 1`,
+        [placaUpper]
+      );
+      kmOt = vk.rowCount ? Number(vk.rows[0].kilometraje || 0) : null;
+    }
 
     const q = await pool.query(
       `
