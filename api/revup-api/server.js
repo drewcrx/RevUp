@@ -7,6 +7,7 @@ import usuariosRouter from "./routes/usuarios.js";
 import ordenesRoutes from "./routes/ordenes.js";
 import reportesRoutes from "./routes/reportes.js";
 import publicoRoutes from "./routes/publico.js";
+import catalogosRoutes from "./routes/catalogos.js";
 import { ensureSchema } from "./db/connection.js";
 
 dotenv.config();
@@ -26,6 +27,7 @@ app.use("/ordenes", ordenesRoutes);
 app.use("/vehiculos", router);
 app.use("/usuarios", usuariosRouter);
 app.use("/v", publicoRoutes);
+app.use("/catalogos", catalogosRoutes);
 
 const PORT = Number(process.env.PORT || 3000);
 

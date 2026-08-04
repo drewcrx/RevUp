@@ -20,6 +20,11 @@ class Vehiculo {
   // ✅ NUEVO
   String? tipoVehiculo;
 
+  // ✅ NUEVO (Fase 1 — catálogos)
+  String? tipoCombustible;
+  String? transmision;
+  String? cilindraje;
+
   // QR activo
   String? qrToken;
 
@@ -36,6 +41,9 @@ class Vehiculo {
     this.propietarioTelefono,
     this.notaIngreso,
     this.tipoVehiculo,
+    this.tipoCombustible,
+    this.transmision,
+    this.cilindraje,
     this.qrToken,
   });
 
@@ -61,6 +69,11 @@ class Vehiculo {
       // ✅ NUEVO
       tipoVehiculo: map['tipo_vehiculo']?.toString(),
 
+      // ✅ NUEVO (Fase 1 — catálogos)
+      tipoCombustible: map['tipo_combustible']?.toString(),
+      transmision: map['transmision']?.toString(),
+      cilindraje: map['cilindraje']?.toString(),
+
       qrToken: map['qr_token']?.toString(),
     );
   }
@@ -81,6 +94,11 @@ class Vehiculo {
 
       // ✅ NUEVO
       'tipo_vehiculo': tipoVehiculo,
+
+      // ✅ NUEVO (Fase 1 — catálogos)
+      'tipo_combustible': tipoCombustible,
+      'transmision': transmision,
+      'cilindraje': cilindraje,
 
       'qr_token': qrToken,
     };

@@ -84,6 +84,87 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   }
 
   // ── Diálogo: agregar repuesto ─────────────────────────────────────────────
+  // Catálogo de repuestos: se abre en una hoja para elegir rápido, sin
+  // dejar de poder escribir uno nuevo que todavía no esté en la lista.
+  Future<void> _elegirRepuestoCatalogo(TextEditingController nomCtrl) async {
+    List<Map<String, dynamic>> catalogo = [];
+    try {
+      catalogo = await ApiService.buscarRepuestosCatalogo("");
+    } catch (_) {}
+    if (!mounted) return;
+
+    final buscarCtrl = TextEditingController();
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setS) {
+          final filtro = buscarCtrl.text.trim().toLowerCase();
+          final filtrados = filtro.isEmpty
+              ? catalogo
+              : catalogo.where((r) =>
+                  (r['nombre'] as String).toLowerCase().contains(filtro)).toList();
+
+          return Container(
+            padding: EdgeInsets.only(
+              left: 18, right: 18, top: 18,
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 18),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D1420),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                const Icon(Icons.inventory_2_rounded, color: _kBlue, size: 18),
+                const SizedBox(width: 8),
+                const Text("Elegir repuesto", style: TextStyle(
+                  fontFamily: 'Ubuntu', color: _kWhite,
+                  fontWeight: FontWeight.w700, fontSize: 15)),
+              ]),
+              const SizedBox(height: 14),
+              _dialogField(buscarCtrl, "Buscar...", Icons.search_rounded,
+                onChanged: (_) => setS(() {})),
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: filtrados.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Text("Sin resultados — puedes escribirlo directo",
+                          style: TextStyle(fontFamily: 'Ubuntu',
+                            color: _kWhite.withOpacity(0.35), fontSize: 12)))
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filtrados.length,
+                        itemBuilder: (_, i) {
+                          final r = filtrados[i];
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(Icons.build_circle_outlined,
+                              color: _kBlue.withOpacity(0.6), size: 18),
+                            title: Text(r['nombre'].toString(), style: const TextStyle(
+                              fontFamily: 'Ubuntu', color: _kWhite, fontSize: 13)),
+                            subtitle: (r['categoria'] ?? '').toString().isNotEmpty
+                                ? Text(r['categoria'].toString(), style: TextStyle(
+                                    fontFamily: 'Ubuntu',
+                                    color: _kWhite.withOpacity(0.35), fontSize: 11))
+                                : null,
+                            onTap: () {
+                              nomCtrl.text = r['nombre'].toString();
+                              Navigator.pop(ctx2);
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+    buscarCtrl.dispose();
+  }
+
   Future<void> _showAddRepuesto() async {
     final nomCtrl  = TextEditingController();
     final cantCtrl = TextEditingController(text: "1");
@@ -96,7 +177,12 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
         title: "Agregar repuesto",
         icon: Icons.settings_rounded,
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          _dialogField(nomCtrl,  "Nombre del repuesto",      Icons.inventory_2_rounded),
+          _dialogField(nomCtrl,  "Nombre del repuesto",      Icons.inventory_2_rounded,
+            trailing: IconButton(
+              icon: const Icon(Icons.list_alt_rounded, color: _kBlue, size: 20),
+              tooltip: "Elegir del catálogo",
+              onPressed: () => _elegirRepuestoCatalogo(nomCtrl),
+            )),
           const SizedBox(height: 12),
           _dialogField(cantCtrl, "Cantidad",                 Icons.numbers_rounded,
             keyboard: TextInputType.number),
@@ -213,16 +299,19 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
 
   // ── Campo de diálogo ──────────────────────────────────────────────────────
   Widget _dialogField(TextEditingController ctrl, String label, IconData icon,
-      {TextInputType keyboard = TextInputType.text}) =>
+      {TextInputType keyboard = TextInputType.text,
+       Widget? trailing, ValueChanged<String>? onChanged}) =>
       TextField(
         controller: ctrl,
         keyboardType: keyboard,
+        onChanged: onChanged,
         style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(fontFamily: 'Ubuntu',
             color: _kBlue.withOpacity(0.85), fontSize: 12),
           prefixIcon: Icon(icon, color: _kBlue.withOpacity(0.70), size: 18),
+          suffixIcon: trailing,
           filled: true, fillColor: _kBlue.withOpacity(0.05),
           contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
           enabledBorder: OutlineInputBorder(

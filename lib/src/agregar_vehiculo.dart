@@ -7,6 +7,8 @@ const _kBlueDark = Color(0xFF0A5FCC);
 const _kWhite    = Color(0xFFF0F4FF);
 const _kBg       = Color(0xFF04060D);
 
+const _kOtro = "Otro";
+
 class AgregarVehiculoPage extends StatefulWidget {
   const AgregarVehiculoPage({super.key});
   @override
@@ -24,20 +26,102 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   final propietarioController  = TextEditingController();
   final telefonoController     = TextEditingController();
   final notaController         = TextEditingController();
+  final cilindrajeController   = TextEditingController();
 
   String? _colorSeleccionado;
   String? _tipoVehiculoSeleccionado;
+  String? _combustibleSeleccionado;
+  String? _transmisionSeleccionada;
   bool    _enviando = false;
 
-  final _colores = const [
-    "Blanco", "Negro", "Rojo", "Azul", "Plomo",
-    "Plateado", "Amarillo", "Verde", "Otro",
-  ];
+  // ── Catálogos (Fase 1) ────────────────────────────────────────────────────
+  bool _cargandoCatalogos = true;
+  List<Map<String, dynamic>> _marcasCat = [];
+  List<Map<String, dynamic>> _modelosCat = [];
+  List<String> _coloresCat = [];
+  List<String> _tiposCat = [];
+  List<String> _combustiblesCat = [];
+  List<String> _transmisionesCat = [];
 
-  final _tiposVehiculo = const [
-    "Sedán", "Hatchback", "SUV", "Pickup / Camioneta",
-    "Coupé", "Van / Minivan", "Camión liviano", "Otro",
-  ];
+  String? _marcaSeleccionada;
+  String? _modeloSeleccionado;
+  bool get _marcaEsOtro => _marcaSeleccionada == _kOtro;
+  bool get _modeloEsOtro => _modeloSeleccionado == _kOtro;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarCatalogos();
+  }
+
+  Future<void> _cargarCatalogos() async {
+    setState(() => _cargandoCatalogos = true);
+    try {
+      final marcasF        = ApiService.obtenerMarcas();
+      final coloresF       = ApiService.obtenerCatalogoItems('color');
+      final tiposF         = ApiService.obtenerCatalogoItems('tipo_vehiculo');
+      final combustiblesF  = ApiService.obtenerCatalogoItems('combustible');
+      final transmisionesF = ApiService.obtenerCatalogoItems('transmision');
+
+      final marcas        = await marcasF;
+      final colores        = await coloresF;
+      final tipos           = await tiposF;
+      final combustibles     = await combustiblesF;
+      final transmisiones    = await transmisionesF;
+
+      if (!mounted) return;
+      setState(() {
+        _marcasCat = marcas;
+        _coloresCat = colores;
+        _tiposCat = tipos;
+        _combustiblesCat = combustibles;
+        _transmisionesCat = transmisiones;
+      });
+    } catch (_) {
+      // Si los catálogos no cargan, el usuario igual puede escribir todo
+      // manualmente eligiendo "Otro" — no bloquea el formulario.
+    } finally {
+      if (mounted) setState(() => _cargandoCatalogos = false);
+    }
+  }
+
+  Future<void> _onMarcaChanged(String? v) async {
+    setState(() {
+      _marcaSeleccionada = v;
+      _modeloSeleccionado = null;
+      _modelosCat = [];
+      modeloController.clear();
+      if (v != null && v != _kOtro) {
+        marcaController.text = v;
+      } else {
+        marcaController.clear();
+      }
+    });
+
+    if (v != null && v != _kOtro) {
+      final marca = _marcasCat.firstWhere((m) => m['nombre'] == v,
+        orElse: () => {});
+      final marcaId = marca['id'];
+      if (marcaId != null) {
+        try {
+          final modelos = await ApiService.obtenerModelos(marcaId as int);
+          if (!mounted) return;
+          setState(() => _modelosCat = modelos);
+        } catch (_) {}
+      }
+    }
+  }
+
+  void _onModeloChanged(String? v) {
+    setState(() {
+      _modeloSeleccionado = v;
+      if (v != null && v != _kOtro) {
+        modeloController.text = v;
+      } else {
+        modeloController.clear();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -50,6 +134,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     propietarioController.dispose();
     telefonoController.dispose();
     notaController.dispose();
+    cilindrajeController.dispose();
     super.dispose();
   }
 
@@ -63,6 +148,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     final kilometraje  = kilometrajeController.text.trim();
     final ultimaVisita = ultimaVisitaController.text.trim();
     final nota         = notaController.text.trim();
+    final cilindraje   = cilindrajeController.text.trim();
     final anio         = int.tryParse(anioTxt);
 
     if (marca.isEmpty || modelo.isEmpty || placa.isEmpty ||
@@ -88,6 +174,9 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
       propietarioNombre: propietario, propietarioTelefono: telefono,
       notaIngreso: nota.isEmpty ? null : nota,
       tipoVehiculo: _tipoVehiculoSeleccionado!,
+      tipoCombustible: _combustibleSeleccionado,
+      transmision: _transmisionSeleccionada,
+      cilindraje: cilindraje.isEmpty ? null : cilindraje,
     );
 
     setState(() => _enviando = false);
@@ -214,10 +303,38 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
         items: items.map((t) => DropdownMenuItem<T>(
           value: t,
           child: Text(t.toString(), style: const TextStyle(
-            fontFamily: 'Ubuntu', color: _kWhite, fontSize: 13)),
+            fontFamily: 'Ubuntu', color: _kWhite, fontSize: 13),
+            overflow: TextOverflow.ellipsis),
         )).toList(),
         onChanged: onChanged,
       );
+
+  // ── Marca / Modelo (dependientes, con opción "Otro" para texto libre) ──────
+  Widget _campoMarca() {
+    if (_marcaEsOtro) {
+      return _field(marcaController, "Marca (escríbela)",
+        Icons.branding_watermark_rounded);
+    }
+    return _dropdown<String>("Marca", Icons.branding_watermark_rounded,
+      _marcaSeleccionada,
+      [..._marcasCat.map((m) => m['nombre'] as String), _kOtro],
+      _onMarcaChanged);
+  }
+
+  Widget _campoModelo() {
+    if (_marcaEsOtro || _modeloEsOtro) {
+      return _field(modeloController, "Modelo (escríbelo)",
+        Icons.car_repair_rounded);
+    }
+    if (_marcaSeleccionada == null) {
+      return _dropdown<String>("Modelo (elige marca primero)",
+        Icons.car_repair_rounded, null, const [], (_) {});
+    }
+    return _dropdown<String>("Modelo", Icons.car_repair_rounded,
+      _modeloSeleccionado,
+      [..._modelosCat.map((m) => m['nombre'] as String), _kOtro],
+      _onModeloChanged);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -271,20 +388,29 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
                 colors: [_kBlue.withOpacity(0.07), Colors.transparent])),
           )),
 
+          if (_cargandoCatalogos)
+            Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(width: 30, height: 30,
+                child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue)),
+              const SizedBox(height: 12),
+              Text("Cargando catálogos...", style: TextStyle(
+                fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.30), fontSize: 12)),
+            ]))
+          else
           SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(18, 10, 18, 40),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
               // ── Sección: Identificación ────────────────────────────────
               _section("Identificación", Icons.directions_car_rounded),
-              _field(marcaController,  "Marca",  Icons.branding_watermark_rounded),
+              _campoMarca(),
               const SizedBox(height: 12),
-              _field(modeloController, "Modelo", Icons.car_repair_rounded),
+              _campoModelo(),
               const SizedBox(height: 12),
               _field(placaController,  "Placa",  Icons.pin_rounded),
               const SizedBox(height: 12),
               _dropdown("Tipo de vehículo", Icons.category_rounded,
-                _tipoVehiculoSeleccionado, _tiposVehiculo,
+                _tipoVehiculoSeleccionado, _tiposCat,
                 (v) => setState(() => _tipoVehiculoSeleccionado = v)),
 
               // ── Sección: Detalles ──────────────────────────────────────
@@ -294,9 +420,22 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
                   keyboard: TextInputType.number)),
                 const SizedBox(width: 12),
                 Expanded(child: _dropdown("Color", Icons.palette_rounded,
-                  _colorSeleccionado, _colores,
+                  _colorSeleccionado, _coloresCat,
                   (v) => setState(() => _colorSeleccionado = v))),
               ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: _dropdown("Combustible", Icons.local_gas_station_rounded,
+                  _combustibleSeleccionado, _combustiblesCat,
+                  (v) => setState(() => _combustibleSeleccionado = v))),
+                const SizedBox(width: 12),
+                Expanded(child: _dropdown("Transmisión", Icons.settings_rounded,
+                  _transmisionSeleccionada, _transmisionesCat,
+                  (v) => setState(() => _transmisionSeleccionada = v))),
+              ]),
+              const SizedBox(height: 12),
+              _field(cilindrajeController, "Cilindraje (opcional)",
+                Icons.speed_outlined),
               const SizedBox(height: 12),
               _field(kilometrajeController, "Kilometraje", Icons.speed_rounded,
                 keyboard: TextInputType.number),

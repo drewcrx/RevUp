@@ -270,6 +270,17 @@ router.post("/", async (req, res) => {
     ? String(b.tipo_vehiculo ?? b.tipoVehiculo).trim().slice(0, 30)
     : null;
 
+  // ✅ NUEVO: combustible / transmisión / cilindraje
+  const tipoCombustible = (b.tipo_combustible ?? b.tipoCombustible ?? null)
+    ? String(b.tipo_combustible ?? b.tipoCombustible).trim().slice(0, 30)
+    : null;
+  const transmision = (b.transmision ?? null)
+    ? String(b.transmision).trim().slice(0, 30)
+    : null;
+  const cilindraje = (b.cilindraje ?? null)
+    ? String(b.cilindraje).trim().slice(0, 20)
+    : null;
+
   if (!placa) return res.status(400).json({ error: "placa inválida" });
 
   const client = await pool.connect();
@@ -283,14 +294,14 @@ router.post("/", async (req, res) => {
       `INSERT INTO vehiculos (
          marca, modelo, placa, kilometraje, ultima_visita, mechanic_id,
          anio, color, propietario_nombre, propietario_telefono, nota_ingreso,
-         tipo_vehiculo
+         tipo_vehiculo, tipo_combustible, transmision, cilindraje
        )
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12, $13,$14,$15)
        RETURNING id`,
       [
         marca, modelo, placa, kilometraje, ultima_visita, mechanicId,
         anio, color, propietarioNombre, propietarioTelefono, notaIngreso,
-        tipoVehiculo
+        tipoVehiculo, tipoCombustible, transmision, cilindraje
       ]
     );
 
@@ -390,6 +401,17 @@ router.put("/:placa", async (req, res) => {
     ? undefined
     : ((b.tipo_vehiculo ?? b.tipoVehiculo ?? null) ? String(b.tipo_vehiculo ?? b.tipoVehiculo).trim().slice(0, 30) : null);
 
+  // ✅ NUEVO: combustible / transmisión / cilindraje
+  const tipoCombustible = (b.tipo_combustible === undefined && b.tipoCombustible === undefined)
+    ? undefined
+    : ((b.tipo_combustible ?? b.tipoCombustible ?? null) ? String(b.tipo_combustible ?? b.tipoCombustible).trim().slice(0, 30) : null);
+  const transmision = (b.transmision === undefined)
+    ? undefined
+    : ((b.transmision ?? null) ? String(b.transmision).trim().slice(0, 30) : null);
+  const cilindraje = (b.cilindraje === undefined)
+    ? undefined
+    : ((b.cilindraje ?? null) ? String(b.cilindraje).trim().slice(0, 20) : null);
+
   const sets = [];
   const params = [];
   let idx = 1;
@@ -407,6 +429,9 @@ router.put("/:placa", async (req, res) => {
   if (propietarioTelefono !== undefined) addSet("propietario_telefono", propietarioTelefono);
   if (notaIngreso !== undefined) addSet("nota_ingreso", notaIngreso);
   if (tipoVehiculo !== undefined) addSet("tipo_vehiculo", tipoVehiculo);
+  if (tipoCombustible !== undefined) addSet("tipo_combustible", tipoCombustible);
+  if (transmision !== undefined) addSet("transmision", transmision);
+  if (cilindraje !== undefined) addSet("cilindraje", cilindraje);
 
   if (sets.length === 0) {
     return res.status(400).json({ error: "No hay campos para actualizar" });

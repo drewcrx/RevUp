@@ -628,6 +628,9 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final anio        = widget.vehiculo.anio?.toString() ?? "—";
     final color       = _datoStr(widget.vehiculo.color);
     final tipo        = _datoStr(widget.vehiculo.tipoVehiculo);
+    final combustible = _datoStr(widget.vehiculo.tipoCombustible);
+    final transmision = _datoStr(widget.vehiculo.transmision);
+    final cilindraje  = _datoStr(widget.vehiculo.cilindraje);
     final propietario = _datoStr(widget.vehiculo.propietarioNombre);
     final telefono    = _datoStr(widget.vehiculo.propietarioTelefono);
     final nota        = _datoStr(widget.vehiculo.notaIngreso);
@@ -800,6 +803,9 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
                 _dato("Tipo",         tipo),
                 _dato("Año",          anio),
                 _dato("Color",        color),
+                _dato("Combustible",  combustible),
+                _dato("Transmisión",  transmision),
+                _dato("Cilindraje",   cilindraje),
                 _dato("Kilometraje",  "$_kmActual km"),
                 _dato("Última visita",
                   _datoStr(widget.vehiculo.ultimaVisita)),

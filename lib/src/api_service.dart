@@ -104,6 +104,9 @@ class ApiService {
 
     // ✅ NUEVO
     String? tipoVehiculo,
+    String? tipoCombustible,
+    String? transmision,
+    String? cilindraje,
   }) async {
     final url = Uri.parse("$baseUrl/vehiculos");
 
@@ -138,6 +141,15 @@ class ApiService {
     if (tipoVehiculo != null && tipoVehiculo.trim().isNotEmpty) {
       bodyData["tipo_vehiculo"] = tipoVehiculo.trim();
     }
+    if (tipoCombustible != null && tipoCombustible.trim().isNotEmpty) {
+      bodyData["tipo_combustible"] = tipoCombustible.trim();
+    }
+    if (transmision != null && transmision.trim().isNotEmpty) {
+      bodyData["transmision"] = transmision.trim();
+    }
+    if (cilindraje != null && cilindraje.trim().isNotEmpty) {
+      bodyData["cilindraje"] = cilindraje.trim();
+    }
 
     final res = await http.post(
       url,
@@ -163,6 +175,9 @@ class ApiService {
 
     // ✅ NUEVO
     String? tipoVehiculo,
+    String? tipoCombustible,
+    String? transmision,
+    String? cilindraje,
   }) async {
     final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}");
 
@@ -191,6 +206,18 @@ class ApiService {
     if (tipoVehiculo != null) {
       final t = tipoVehiculo.trim();
       body["tipo_vehiculo"] = t.isEmpty ? null : t;
+    }
+    if (tipoCombustible != null) {
+      final t = tipoCombustible.trim();
+      body["tipo_combustible"] = t.isEmpty ? null : t;
+    }
+    if (transmision != null) {
+      final t = transmision.trim();
+      body["transmision"] = t.isEmpty ? null : t;
+    }
+    if (cilindraje != null) {
+      final t = cilindraje.trim();
+      body["cilindraje"] = t.isEmpty ? null : t;
     }
 
     if (body.isEmpty) return false;
@@ -227,6 +254,55 @@ class ApiService {
     }
 
     throw _httpError(res, "Error al obtener historial de OTs");
+  }
+
+  // =========================
+  // CATÁLOGOS (privado) — marca/modelo, listas planas, repuestos
+  // =========================
+
+  static Future<List<Map<String, dynamic>>> obtenerMarcas() async {
+    final url = Uri.parse("$baseUrl/catalogos/marcas");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "Error al obtener marcas");
+  }
+
+  static Future<List<Map<String, dynamic>>> obtenerModelos(int marcaId) async {
+    final url = Uri.parse("$baseUrl/catalogos/marcas/$marcaId/modelos");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "Error al obtener modelos");
+  }
+
+  /// categoria: color | tipo_vehiculo | combustible | transmision
+  static Future<List<String>> obtenerCatalogoItems(String categoria) async {
+    final url = Uri.parse("$baseUrl/catalogos/items/$categoria");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => (e as Map)['valor'].toString()).toList();
+    }
+    throw _httpError(res, "Error al obtener catálogo");
+  }
+
+  static Future<List<Map<String, dynamic>>> buscarRepuestosCatalogo(String query) async {
+    final url = Uri.parse("$baseUrl/catalogos/repuestos?q=${Uri.encodeQueryComponent(query)}");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "Error al obtener repuestos");
   }
 
   // =========================
