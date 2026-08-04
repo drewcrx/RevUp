@@ -1,13 +1,30 @@
 // api_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 
 import 'vehiculo_model.dart';
 import 'session.dart';
 
 class ApiService {
   static const String baseUrl = "https://backrevup.byronrm.com";
+
+  // El backend rechaza cualquier subida cuyo mimetype no empiece con
+  // "image/". http.MultipartFile.fromPath intenta adivinarlo solo por la
+  // extensión del archivo, y en algunos dispositivos/Android la ruta que
+  // entrega la cámara no trae una extensión reconocible -> cae a
+  // application/octet-stream y el backend la rechaza con 400. Se fuerza
+  // explícitamente el tipo, con 'image/jpeg' como respaldo seguro.
+  static MediaType _imageMediaType(String path) {
+    final mimeType = lookupMimeType(path);
+    if (mimeType != null && mimeType.startsWith('image/')) {
+      final parts = mimeType.split('/');
+      return MediaType(parts[0], parts[1]);
+    }
+    return MediaType('image', 'jpeg');
+  }
 
   // =========================
   // Helpers
@@ -778,7 +795,8 @@ class ApiService {
     }
     request.fields['tipo'] = tipo;
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+      request.files.add(await http.MultipartFile.fromPath(
+        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
     }
 
     final streamed = await request.send().timeout(const Duration(seconds: 45));
@@ -873,7 +891,8 @@ class ApiService {
       request.headers['Authorization'] = 'Bearer $t';
     }
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+      request.files.add(await http.MultipartFile.fromPath(
+        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
     }
 
     final streamed = await request.send().timeout(const Duration(seconds: 45));
@@ -949,7 +968,8 @@ class ApiService {
       request.headers['Authorization'] = 'Bearer $t';
     }
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+      request.files.add(await http.MultipartFile.fromPath(
+        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
     }
 
     final streamed = await request.send().timeout(const Duration(seconds: 45));
