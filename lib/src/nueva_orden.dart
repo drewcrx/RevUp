@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
+import 'inspeccion_danos.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -64,9 +65,19 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
 
     setState(() => loading = true);
     try {
-      await ApiService.crearOrden(placa: placa, symptoms: symptoms);
+      final ot = await ApiService.crearOrden(placa: placa, symptoms: symptoms);
       if (!mounted) return;
-      Navigator.pop(context, true);
+      final ordenId = int.tryParse((ot['id'] ?? '').toString());
+      if (ordenId != null) {
+        // Primero se registra la OT, luego se documenta el estado del auto
+        // (inspección de daños "al ingresar") antes de ver el resto del
+        // detalle — así queda constancia desde el primer momento.
+        Navigator.pushReplacement(context, MaterialPageRoute(
+          builder: (_) => InspeccionDanosPage(ordenId: ordenId, placa: placa),
+        ));
+      } else {
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

@@ -119,8 +119,8 @@ class _OrdenesPageState extends State<OrdenesPage> {
           label: const Text("Nueva OT", style: TextStyle(
             fontFamily: 'Ubuntu', fontWeight: FontWeight.w700, letterSpacing: 0.5)),
           onPressed: () async {
-            final ok = await Navigator.pushNamed(context, '/nueva_orden');
-            if (ok == true) _cargar();
+            await Navigator.pushNamed(context, '/nueva_orden');
+            _cargar();
           },
         ),
 
