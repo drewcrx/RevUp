@@ -201,20 +201,8 @@ class _ScanQRPageState extends State<ScanQRPage>
               width: 260, height: 260,
               child: Stack(children: [
 
-                // Marco principal con glow azul
-                Container(
-                  width: 260, height: 260,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _kBlue, width: 2),
-                    boxShadow: [
-                      BoxShadow(color: _kBlue.withOpacity(0.45),
-                        blurRadius: 24, spreadRadius: 2),
-                    ],
-                  ),
-                ),
-
-                // Esquinas decorativas (más gruesas y destacadas)
+                // Solo esquinas (estilo visor de cámara) — un único marco,
+                // sin un segundo borde completo detrás que se vea duplicado.
                 ..._corners(),
 
                 // Línea de escaneo animada
@@ -330,6 +318,9 @@ class _ScanQRPageState extends State<ScanQRPage>
               bottomLeft:  a == Alignment.bottomLeft  ? const Radius.circular(r) : Radius.zero,
               bottomRight: a == Alignment.bottomRight ? const Radius.circular(r) : Radius.zero,
             ),
+            boxShadow: [
+              BoxShadow(color: _kBlue.withOpacity(0.55), blurRadius: 10),
+            ],
           ),
         ),
       );
