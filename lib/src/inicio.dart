@@ -170,6 +170,26 @@ class _InicioPageState extends State<InicioPage> {
     }
   }
 
+  String _saludo() {
+    final h = DateTime.now().hour;
+    if (h < 12) return "Buenos días";
+    if (h < 19) return "Buenas tardes";
+    return "Buenas noches";
+  }
+
+  static const _meses = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  ];
+
+  String _mesLegible(String ym) {
+    final parts = ym.split("-");
+    if (parts.length != 2) return ym;
+    final m = int.tryParse(parts[1]);
+    if (m == null || m < 1 || m > 12) return ym;
+    return "${_meses[m - 1][0].toUpperCase()}${_meses[m - 1].substring(1)} ${parts[0]}";
+  }
+
   Future<void> _changeMonthPicker() async {
     final now = DateTime.now();
     DateTime initial = now;
@@ -241,52 +261,6 @@ class _InicioPageState extends State<InicioPage> {
     );
   }
 
-  /// Fila clave-valor estilizada
-  Widget _kv(String k, String v, {Color valueColor = kBlue, VoidCallback? onTap}) {
-    final content = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Expanded(child: Text(k, style: TextStyle(
-            fontFamily: 'Ubuntu', color: kWhite.withOpacity(0.5), fontSize: 13,
-          ))),
-          Text(v, style: TextStyle(
-            fontFamily: 'Ubuntu', color: valueColor,
-            fontWeight: FontWeight.w700, fontSize: 13,
-          )),
-          if (onTap != null) ...[
-            const SizedBox(width: 6),
-            Icon(Icons.arrow_forward_ios_rounded, size: 12, color: kBlue.withOpacity(0.6)),
-          ],
-        ],
-      ),
-    );
-    if (onTap == null) return content;
-    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: content);
-  }
-
-  /// Badge de rol
-  Widget _roleBadge(String role) {
-    final label = role == "superuser" ? "SUPERUSER" : "MECÁNICO";
-    final icon  = role == "superuser" ? Icons.admin_panel_settings_rounded : Icons.build_rounded;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF2AA0FF), kBlueDark]),
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: [BoxShadow(color: kBlue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, color: Colors.white, size: 13),
-        const SizedBox(width: 5),
-        Text(label, style: const TextStyle(
-          fontFamily: 'Ubuntu', color: Colors.white,
-          fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1,
-        )),
-      ]),
-    );
-  }
-
   /// Chip de estado para OT
   Widget _estadoChip(String estado) {
     Color c;
@@ -307,31 +281,80 @@ class _InicioPageState extends State<InicioPage> {
     );
   }
 
-  /// Botón de acceso rápido
-  Widget _quickBtn(String text, IconData icon, VoidCallback onTap) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: kBlue.withOpacity(0.07),
-            border: Border.all(color: kBlue.withOpacity(0.22), width: 1),
-            borderRadius: BorderRadius.circular(14),
+  /// Acceso rápido — tile uniforme tipo "launcher", pensado para ir en fila
+  /// (Expanded) y que nunca se vean amontonados sin importar el largo del
+  /// texto ni cuántos haya.
+  Widget _quickTile(String label, IconData icon, VoidCallback onTap) {
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            height: 76,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+            decoration: BoxDecoration(
+              color: kBlue.withOpacity(0.06),
+              border: Border.all(color: kBlue.withOpacity(0.18), width: 1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: kBlue.withOpacity(0.14)),
+                child: Icon(icon, color: kBlue, size: 17),
+              ),
+              const SizedBox(height: 7),
+              Text(label,
+                textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontFamily: 'Ubuntu',
+                  color: kWhite.withOpacity(0.75), fontSize: 10.5, fontWeight: FontWeight.w600)),
+            ]),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: kBlue, size: 18),
-            const SizedBox(width: 8),
-            Text(text, style: const TextStyle(
-              fontFamily: 'Ubuntu', color: kWhite,
-              fontWeight: FontWeight.w600, fontSize: 13,
-            )),
-          ]),
         ),
       ),
     );
+  }
+
+  /// Métrica protagonista — una sola por pantalla, con gradiente, para dar
+  /// jerarquía real en vez de que todo pese lo mismo.
+  Widget _heroMetric({
+    required String value, required String label, required IconData icon,
+    required List<Color> gradient, VoidCallback? onTap,
+  }) {
+    final content = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight, colors: gradient),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(
+          color: gradient.first.withOpacity(0.35), blurRadius: 22, offset: const Offset(0, 8))],
+      ),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label.toUpperCase(), style: TextStyle(fontFamily: 'Ubuntu',
+            color: Colors.white.withOpacity(0.78), fontSize: 11,
+            fontWeight: FontWeight.w800, letterSpacing: 1.3)),
+          const SizedBox(height: 8),
+          Text(value, style: const TextStyle(fontFamily: 'Ubuntu',
+            color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
+        ])),
+        Container(
+          width: 52, height: 52,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.16)),
+          child: Icon(icon, color: Colors.white, size: 24),
+        ),
+        if (onTap != null) ...[
+          const SizedBox(width: 4),
+          Icon(Icons.arrow_forward_ios_rounded, color: Colors.white.withOpacity(0.55), size: 14),
+        ],
+      ]),
+    );
+    if (onTap == null) return content;
+    return GestureDetector(onTap: onTap, child: content);
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -502,7 +525,7 @@ class _InicioPageState extends State<InicioPage> {
                             _glass(child: Row(children: [
                               // Avatar circular con inicial
                               Container(
-                                width: 46, height: 46,
+                                width: 50, height: 50,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   gradient: const LinearGradient(
@@ -515,31 +538,66 @@ class _InicioPageState extends State<InicioPage> {
                                   nombre.isNotEmpty ? nombre[0].toUpperCase() : "U",
                                   style: const TextStyle(
                                     fontFamily: 'Ubuntu', color: Colors.white,
-                                    fontWeight: FontWeight.w800, fontSize: 20,
+                                    fontWeight: FontWeight.w800, fontSize: 21,
                                   ),
                                 )),
                               ),
                               const SizedBox(width: 14),
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(
-                                  nombre.toUpperCase(),
+                                  "${_saludo()},",
+                                  style: TextStyle(fontFamily: 'Ubuntu',
+                                    color: kWhite.withOpacity(0.45), fontSize: 12, fontWeight: FontWeight.w500),
+                                ),
+                                Text(
+                                  nombre,
                                   style: const TextStyle(
                                     fontFamily: 'Ubuntu', color: kWhite,
-                                    fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.5,
+                                    fontWeight: FontWeight.w800, fontSize: 17, letterSpacing: 0.2,
                                   ),
                                 ),
-                                const SizedBox(height: 5),
+                                const SizedBox(height: 6),
                                 Row(children: [
-                                  _roleBadge(role),
-                                  const SizedBox(width: 8),
-                                  Text(month, style: TextStyle(
-                                    fontFamily: 'Ubuntu', color: kWhite.withOpacity(0.4), fontSize: 12,
-                                  )),
+                                  Icon(
+                                    role == "superuser" ? Icons.admin_panel_settings_rounded : Icons.build_rounded,
+                                    color: kBlue.withOpacity(0.65), size: 13),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    "${role == "superuser" ? "Superuser" : "Mecánico"} · ${_mesLegible(month)}",
+                                    style: TextStyle(fontFamily: 'Ubuntu',
+                                      color: kWhite.withOpacity(0.40), fontSize: 12),
+                                  ),
                                 ]),
                               ])),
                             ])),
 
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 18),
+
+                            // ── Accesos rápidos (arriba, en fila pareja) ─────
+                            _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              _sectionTitle("Accesos rápidos", icon: Icons.rocket_launch_rounded),
+                              const SizedBox(height: 14),
+                              Row(children: [
+                                _quickTile("Órdenes", Icons.assignment_rounded,
+                                  () => Navigator.pushNamed(context, "/ordenes")),
+                                const SizedBox(width: 10),
+                                _quickTile("Vehículos", Icons.directions_car_rounded,
+                                  () => Navigator.pushNamed(context, "/vehiculos")),
+                                const SizedBox(width: 10),
+                                _quickTile("Escanear", Icons.qr_code_scanner_rounded,
+                                  () => Navigator.pushNamed(context, "/scanqr")),
+                                const SizedBox(width: 10),
+                                _quickTile("Perfil", Icons.person_rounded,
+                                  () => Navigator.pushNamed(context, "/perfil")),
+                                if (isSuper) ...[
+                                  const SizedBox(width: 10),
+                                  _quickTile("Reportes", Icons.bar_chart_rounded,
+                                    () => Navigator.pushNamed(context, "/reportes")),
+                                ],
+                              ]),
+                            ])),
+
+                            const SizedBox(height: 18),
 
                             // ════════════════════════════════════════════════
                             // MECÁNICO
@@ -550,12 +608,20 @@ class _InicioPageState extends State<InicioPage> {
                               _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 _sectionTitle("Mi resumen del mes", icon: Icons.bar_chart_rounded),
                                 const SizedBox(height: 16),
+                                _heroMetric(
+                                  value: "\$${_money(resumenMecanico?["pendiente"])}",
+                                  label: "Pendiente por cobrar",
+                                  icon: Icons.pending_actions_rounded,
+                                  gradient: const [Color(0xFFFFA640), Color(0xFFE8830B)],
+                                  onTap: () => Navigator.pushNamed(context, "/ordenes"),
+                                ),
+                                const SizedBox(height: 12),
                                 Row(children: [
                                   Expanded(child: _metricTile(
                                     "${resumenMecanico?["ots"] ?? 0}",
                                     "OTs del mes",
                                     Icons.assignment_rounded,
-                                    kBlueGlow,
+                                    kBlue,
                                   )),
                                   const SizedBox(width: 10),
                                   Expanded(child: _metricTile(
@@ -566,28 +632,16 @@ class _InicioPageState extends State<InicioPage> {
                                   )),
                                 ]),
                                 const SizedBox(height: 10),
-                                Row(children: [
-                                  Expanded(child: _metricTile(
-                                    "\$${_money(resumenMecanico?["total_pagado"])}",
-                                    "Pagado",
-                                    Icons.check_circle_rounded,
-                                    Colors.greenAccent,
-                                  )),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: GestureDetector(
-                                    onTap: () => Navigator.pushNamed(context, "/ordenes"),
-                                    child: _metricTile(
-                                      "\$${_money(resumenMecanico?["pendiente"])}",
-                                      "Pendiente",
-                                      Icons.pending_actions_rounded,
-                                      kOrange,
-                                      tappable: true,
-                                    ),
-                                  )),
-                                ]),
+                                _metricTile(
+                                  "\$${_money(resumenMecanico?["total_pagado"])}",
+                                  "Pagado",
+                                  Icons.check_circle_rounded,
+                                  Colors.greenAccent,
+                                  wide: true,
+                                ),
                               ])),
 
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 18),
 
                               // Lista OTs
                               _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -714,10 +768,17 @@ class _InicioPageState extends State<InicioPage> {
                             // ════════════════════════════════════════════════
                             if (isSuper) ...[
 
-                              // Resumen taller — 3 métricas
+                              // Resumen taller
                               _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 _sectionTitle("Resumen del taller", icon: Icons.garage_rounded),
                                 const SizedBox(height: 16),
+                                _heroMetric(
+                                  value: "\$${_money(resumenTaller?["utilidad"])}",
+                                  label: "Utilidad neta",
+                                  icon: Icons.account_balance_wallet_rounded,
+                                  gradient: const [Color(0xFF2AA0FF), kBlueDark],
+                                ),
+                                const SizedBox(height: 12),
                                 Row(children: [
                                   Expanded(child: _metricTile(
                                     "\$${_money(resumenTaller?["ingresos"])}",
@@ -733,17 +794,9 @@ class _InicioPageState extends State<InicioPage> {
                                     kOrange,
                                   )),
                                 ]),
-                                const SizedBox(height: 10),
-                                _metricTile(
-                                  "\$${_money(resumenTaller?["utilidad"])}",
-                                  "Utilidad neta",
-                                  Icons.account_balance_wallet_rounded,
-                                  kBlue,
-                                  wide: true,
-                                ),
                               ])),
 
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 18),
 
                               // Mecánicos
                               _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -831,21 +884,6 @@ class _InicioPageState extends State<InicioPage> {
                                   }).toList(),
                               ])),
                             ],
-
-                            const SizedBox(height: 14),
-
-                            // ── Accesos rápidos ──────────────────────────────
-                            _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              _sectionTitle("Accesos rápidos", icon: Icons.rocket_launch_rounded),
-                              const SizedBox(height: 14),
-                              Wrap(spacing: 10, runSpacing: 10, children: [
-                                _quickBtn("Órdenes",    Icons.assignment_rounded,      () => Navigator.pushNamed(context, "/ordenes")),
-                                _quickBtn("Vehículos",  Icons.directions_car_rounded,  () => Navigator.pushNamed(context, "/vehiculos")),
-                                _quickBtn("Escanear QR",Icons.qr_code_scanner_rounded, () => Navigator.pushNamed(context, "/scanqr")),
-                                _quickBtn("Perfil",     Icons.person_rounded,          () => Navigator.pushNamed(context, "/perfil")),
-                                if (isSuper) _quickBtn("Reportes", Icons.bar_chart_rounded, () => Navigator.pushNamed(context, "/reportes")),
-                              ]),
-                            ])),
 
                           ],
                         ),
