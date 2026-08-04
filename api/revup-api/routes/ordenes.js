@@ -97,6 +97,48 @@ async function getDanoIfAllowed(danoId, user) {
 }
 
 // =========================
+// Actualizaciones de la OT — foto(s) + nota mientras se trabaja el auto
+// =========================
+const actualizacionFotosStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dir = path.join(UPLOAD_DIR, `actualizacion_${req.params.actId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const uploadActualizacionFotos = multer({
+  storage: actualizacionFotosStorage,
+  limits: { fileSize: 8 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Solo se permiten imágenes"));
+    }
+    cb(null, true);
+  },
+});
+
+function subirActualizacionFotosMiddleware(req, res, next) {
+  uploadActualizacionFotos.array("fotos", 10)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || "Error subiendo archivo" });
+    next();
+  });
+}
+
+// Verifica que la actualización exista y que el usuario tenga acceso a la OT dueña
+async function getActualizacionIfAllowed(actId, user) {
+  const a = await pool.query(`SELECT * FROM orden_actualizaciones WHERE id = $1`, [actId]);
+  if (a.rowCount === 0) return null;
+  const ot = await getOtIfAllowed(a.rows[0].orden_id, user);
+  if (!ot) return null;
+  return a.rows[0];
+}
+
+// =========================
 // Helpers
 // =========================
 async function recalcularTotales(ordenId) {
@@ -182,9 +224,10 @@ async function getOtIfAllowed(ordenId, user) {
   }
 
   const ot = await pool.query(
-    `SELECT *
-     FROM ordenes_trabajo
-     WHERE id = $1
+    `SELECT ot.*, u.nombre AS mechanic_nombre
+     FROM ordenes_trabajo ot
+     LEFT JOIN usuarios u ON u.id = ot.mechanic_id
+     WHERE ot.id = $1
      ${extra}`,
     params
   );
@@ -371,6 +414,28 @@ router.get("/:id", async (req, res) => {
       }
     }
 
+    const actualizaciones = await pool.query(
+      `SELECT id, orden_id, nota, created_at
+       FROM orden_actualizaciones
+       WHERE orden_id = $1
+       ORDER BY created_at DESC`,
+      [id]
+    );
+    let actFotosPorId = {};
+    if (actualizaciones.rowCount > 0) {
+      const actIds = actualizaciones.rows.map((a) => a.id);
+      const af = await pool.query(
+        `SELECT id, actualizacion_id, ruta, created_at
+         FROM orden_actualizacion_fotos
+         WHERE actualizacion_id = ANY($1::int[])
+         ORDER BY created_at ASC`,
+        [actIds]
+      );
+      for (const f of af.rows) {
+        (actFotosPorId[f.actualizacion_id] ??= []).push({ ...f, url: fotoUrl(f.ruta) });
+      }
+    }
+
     return res.json({
       ot,
       servicios: servicios.rows,
@@ -378,9 +443,34 @@ router.get("/:id", async (req, res) => {
       pagos: pagos.rows,
       fotos: fotos.rows.map((f) => ({ ...f, url: fotoUrl(f.ruta) })),
       danos: danos.rows.map((d) => ({ ...d, fotos: danoFotosPorId[d.id] || [] })),
+      actualizaciones: actualizaciones.rows.map((a) => ({ ...a, fotos: actFotosPorId[a.id] || [] })),
     });
   } catch (e) {
     return res.status(500).json({ error: "Error cargando detalle", detalle: e.message });
+  }
+});
+
+// =========================
+// 2b) Diagnóstico / notas generales de la OT
+// =========================
+router.put("/:id/diagnostico", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "id inválido" });
+
+  const diagnostico = String(req.body?.diagnostico || "").trim().slice(0, 2000) || null;
+
+  try {
+    const ot = await getOtIfAllowed(id, req.user);
+    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
+
+    const q = await pool.query(
+      `UPDATE ordenes_trabajo SET diagnostico = $1 WHERE id = $2 RETURNING id, diagnostico`,
+      [diagnostico, id]
+    );
+
+    return res.json(q.rows[0]);
+  } catch (e) {
+    return res.status(500).json({ error: "Error actualizando diagnóstico", detalle: e.message });
   }
 });
 
@@ -613,6 +703,107 @@ router.delete("/danos/fotos/:fotoId", async (req, res) => {
     if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
 
     await pool.query(`DELETE FROM orden_dano_fotos WHERE id = $1`, [fotoId]);
+    fs.unlink(path.join(UPLOAD_DIR, f.rows[0].ruta), () => {});
+
+    return res.json({ mensaje: "Foto eliminada" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
+  }
+});
+
+// =========================
+// Actualizaciones de la OT (foto + nota mientras se trabaja)
+// =========================
+router.post("/:id/actualizaciones", async (req, res) => {
+  const ordenId = Number(req.params.id);
+  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
+
+  const nota = req.body?.nota ? String(req.body.nota).trim().slice(0, 1000) : null;
+
+  try {
+    const ot = await getOtIfAllowed(ordenId, req.user);
+    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
+
+    const q = await pool.query(
+      `INSERT INTO orden_actualizaciones (orden_id, nota) VALUES ($1, $2) RETURNING *`,
+      [ordenId, nota]
+    );
+
+    return res.status(201).json({ ...q.rows[0], fotos: [] });
+  } catch (e) {
+    return res.status(500).json({ error: "Error agregando actualización", detalle: e.message });
+  }
+});
+
+router.delete("/actualizaciones/:actId", async (req, res) => {
+  const actId = Number(req.params.actId);
+  if (!Number.isFinite(actId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const act = await getActualizacionIfAllowed(actId, req.user);
+    if (!act) return res.status(404).json({ error: "Actualización no encontrada" });
+
+    const fotosRes = await pool.query(
+      `SELECT ruta FROM orden_actualizacion_fotos WHERE actualizacion_id = $1`, [actId]);
+
+    await pool.query(`DELETE FROM orden_actualizaciones WHERE id = $1`, [actId]);
+
+    for (const f of fotosRes.rows) {
+      fs.unlink(path.join(UPLOAD_DIR, f.ruta), () => {});
+    }
+
+    return res.json({ mensaje: "Actualización eliminada" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error eliminando actualización", detalle: e.message });
+  }
+});
+
+router.post("/actualizaciones/:actId/fotos", subirActualizacionFotosMiddleware, async (req, res) => {
+  const actId = Number(req.params.actId);
+  if (!Number.isFinite(actId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const act = await getActualizacionIfAllowed(actId, req.user);
+    if (!act) return res.status(404).json({ error: "Actualización no encontrada" });
+
+    const files = req.files || [];
+    if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });
+
+    const inserted = [];
+    for (const file of files) {
+      const relPath = `actualizacion_${actId}/${file.filename}`;
+      const q = await pool.query(
+        `INSERT INTO orden_actualizacion_fotos (actualizacion_id, ruta)
+         VALUES ($1, $2)
+         RETURNING id, actualizacion_id, ruta, created_at`,
+        [actId, relPath]
+      );
+      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
+    }
+
+    return res.status(201).json(inserted);
+  } catch (e) {
+    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
+  }
+});
+
+router.delete("/actualizaciones/fotos/:fotoId", async (req, res) => {
+  const fotoId = Number(req.params.fotoId);
+  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const f = await pool.query(
+      `SELECT f.id, f.ruta, f.actualizacion_id
+       FROM orden_actualizacion_fotos f
+       WHERE f.id = $1`,
+      [fotoId]
+    );
+    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
+
+    const allowed = await getActualizacionIfAllowed(f.rows[0].actualizacion_id, req.user);
+    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
+
+    await pool.query(`DELETE FROM orden_actualizacion_fotos WHERE id = $1`, [fotoId]);
     fs.unlink(path.join(UPLOAD_DIR, f.rows[0].ruta), () => {});
 
     return res.json({ mensaje: "Foto eliminada" });

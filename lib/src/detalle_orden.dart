@@ -49,6 +49,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       (data?['fotos'] as List? ?? []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get danos =>
       (data?['danos'] as List? ?? []).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get actualizaciones =>
+      (data?['actualizaciones'] as List? ?? []).cast<Map<String, dynamic>>();
 
   bool _subiendoFotos = false;
   final _picker = ImagePicker();
@@ -121,9 +123,141 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     }
   }
 
+  // ── Actualizaciones durante el trabajo (foto + nota, no solo ingreso/entrega) ──
+  Future<List<XFile>> _elegirFotos() async {
+    final origen = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: const Color(0xFF0D1420),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_rounded, color: _kBlue),
+            title: const Text("Tomar foto", style: TextStyle(fontFamily: 'Ubuntu', color: _kWhite)),
+            onTap: () => Navigator.pop(ctx, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_rounded, color: _kBlue),
+            title: const Text("Elegir de la galería", style: TextStyle(fontFamily: 'Ubuntu', color: _kWhite)),
+            onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (origen == null) return [];
+    try {
+      if (origen == ImageSource.camera) {
+        final foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 75, maxWidth: 1600);
+        return foto != null ? [foto] : [];
+      }
+      return await _picker.pickMultiImage(imageQuality: 75, maxWidth: 1600);
+    } catch (e) {
+      _snack("No se pudo abrir la cámara/galería: $e", error: true);
+      return [];
+    }
+  }
+
+  Future<void> _agregarActualizacion() async {
+    final notaCtrl = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => _Dialog(
+        title: "Nueva actualización",
+        icon: Icons.update_rounded,
+        content: _dialogField(notaCtrl, "Qué encontraste / hiciste", Icons.notes_rounded, maxLines: 4),
+        onCancel: () => Navigator.pop(ctx),
+        onConfirm: () async {
+          final nota = notaCtrl.text.trim();
+          try {
+            final creada = await ApiService.agregarActualizacionOT(
+              ordenId: widget.ordenId, nota: nota.isEmpty ? null : nota);
+            if (!mounted) return;
+            Navigator.pop(ctx);
+            await _load();
+
+            final actId = int.tryParse((creada['id'] ?? '').toString());
+            if (actId == null) return;
+            final archivos = await _elegirFotos();
+            if (archivos.isEmpty) return;
+            await ApiService.subirFotosActualizacion(actualizacionId: actId, archivos: archivos);
+            if (!mounted) return;
+            await _load();
+            _snack("Actualización guardada ✅");
+          } catch (e) { if (!mounted) return; _snack(e.toString(), error: true); }
+        },
+      ),
+    );
+    notaCtrl.dispose();
+  }
+
+  Future<void> _agregarFotosAActualizacion(int actId) async {
+    final archivos = await _elegirFotos();
+    if (archivos.isEmpty) return;
+    try {
+      await ApiService.subirFotosActualizacion(actualizacionId: actId, archivos: archivos);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString(), error: true);
+    }
+  }
+
+  Future<void> _eliminarActualizacion(int actId) async {
+    try {
+      await ApiService.eliminarActualizacionOT(actId);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString(), error: true);
+    }
+  }
+
+  Future<void> _eliminarFotoActualizacion(int fotoId) async {
+    try {
+      await ApiService.eliminarFotoActualizacion(fotoId);
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString(), error: true);
+    }
+  }
+
   String _money(dynamic v) {
     final n = double.tryParse(v?.toString() ?? "0") ?? 0;
     return "\$${n.toStringAsFixed(2)}";
+  }
+
+  // ── Diálogo: editar diagnóstico / notas generales ─────────────────────────
+  Future<void> _editarDiagnostico() async {
+    final ctrl = TextEditingController(text: (ot['diagnostico'] ?? '').toString());
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => _Dialog(
+        title: "Diagnóstico",
+        icon: Icons.fact_check_rounded,
+        content: _dialogField(ctrl, "Qué se encontró / hizo / recomienda",
+          Icons.notes_rounded, maxLines: 6),
+        onCancel: () => Navigator.pop(ctx),
+        onConfirm: () async {
+          try {
+            await ApiService.actualizarDiagnosticoOT(
+              ordenId: widget.ordenId, diagnostico: ctrl.text.trim());
+            if (!mounted) return;
+            Navigator.pop(ctx);
+            await _load();
+          } catch (e) { if (!mounted) return; _snack(e.toString(), error: true); }
+        },
+      ),
+    );
+    ctrl.dispose();
   }
 
   // ── Diálogo: agregar servicio ─────────────────────────────────────────────
@@ -376,11 +510,12 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
 
   // ── Campo de diálogo ──────────────────────────────────────────────────────
   Widget _dialogField(TextEditingController ctrl, String label, IconData icon,
-      {TextInputType keyboard = TextInputType.text,
+      {TextInputType keyboard = TextInputType.text, int maxLines = 1,
        Widget? trailing, ValueChanged<String>? onChanged}) =>
       TextField(
         controller: ctrl,
         keyboardType: keyboard,
+        maxLines: maxLines,
         onChanged: onChanged,
         style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
         decoration: InputDecoration(
@@ -401,7 +536,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       );
 
   // ── Sección con título ────────────────────────────────────────────────────
-  Widget _section(String title, int count, IconData icon) => Padding(
+  Widget _section(String title, int count, IconData icon, {bool showCount = true}) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(children: [
       Container(width: 3, height: 16,
@@ -413,16 +548,18 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       Text(title, style: const TextStyle(
         fontFamily: 'Ubuntu', color: _kWhite,
         fontWeight: FontWeight.w700, fontSize: 13)),
-      const SizedBox(width: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-        decoration: BoxDecoration(
-          color: _kBlue.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _kBlue.withOpacity(0.28))),
-        child: Text("$count", style: const TextStyle(
-          fontFamily: 'Ubuntu', color: _kBlue,
-          fontWeight: FontWeight.w700, fontSize: 10))),
+      if (showCount) ...[
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+          decoration: BoxDecoration(
+            color: _kBlue.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: _kBlue.withOpacity(0.28))),
+          child: Text("$count", style: const TextStyle(
+            fontFamily: 'Ubuntu', color: _kBlue,
+            fontWeight: FontWeight.w700, fontSize: 10))),
+      ],
     ]),
   );
 
@@ -501,6 +638,10 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final estado     = (ot['estado']     ?? '').toString().toUpperCase();
     final pagoEstado = (ot['pago_estado'] ?? '').toString();
     final symptoms   = (ot['symptoms']   ?? '').toString();
+    final diagnostico = (ot['diagnostico'] ?? '').toString();
+    final mechanicNombre = (ot['mechanic_nombre'] ?? '').toString();
+    final closedAtRaw = (ot['closed_at'] ?? '').toString();
+    final closedAt = DateTime.tryParse(closedAtRaw);
     final total      = ot['total'] ?? 0;
     final kmRaw      = ot['kilometraje_ot'];
     final int? km    = kmRaw is int ? kmRaw : int.tryParse(kmRaw?.toString() ?? "");
@@ -639,6 +780,35 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       style: const TextStyle(fontFamily: 'Ubuntu',
                         color: _kBlue, fontWeight: FontWeight.w700, fontSize: 12)),
                   ]),
+                  if (mechanicNombre.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(Icons.build_rounded,
+                        color: _kBlue.withOpacity(0.65), size: 14),
+                      const SizedBox(width: 6),
+                      Text("Atendido por: ", style: TextStyle(
+                        fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.45),
+                        fontSize: 12)),
+                      Text(mechanicNombre, style: const TextStyle(
+                        fontFamily: 'Ubuntu', color: _kBlue,
+                        fontWeight: FontWeight.w700, fontSize: 12)),
+                    ]),
+                  ],
+                  if (closedAt != null) ...[
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(Icons.event_available_rounded,
+                        color: Colors.greenAccent.withOpacity(0.75), size: 14),
+                      const SizedBox(width: 6),
+                      Text("Entregado el: ", style: TextStyle(
+                        fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.45),
+                        fontSize: 12)),
+                      Text(
+                        "${closedAt.day.toString().padLeft(2, '0')}/${closedAt.month.toString().padLeft(2, '0')}/${closedAt.year}",
+                        style: const TextStyle(fontFamily: 'Ubuntu',
+                          color: Colors.greenAccent, fontWeight: FontWeight.w700, fontSize: 12)),
+                    ]),
+                  ],
                   const SizedBox(height: 12),
                   // Estado del trabajo + estado del pago en chips separados
                   // (ambos pueden decir "pendiente" pero significan cosas
@@ -676,6 +846,29 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                   _fotosGrupo("Al entregar", "entrega"),
                 ])),
 
+                // ── Diagnóstico ───────────────────────────────────────────
+                _card(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Row(children: [
+                    Expanded(child: _section("Diagnóstico", 0, Icons.fact_check_rounded,
+                      showCount: false)),
+                    IconButton(
+                      icon: Icon(Icons.edit_rounded, color: _kBlue.withOpacity(0.7), size: 18),
+                      tooltip: "Editar diagnóstico",
+                      onPressed: _editarDiagnostico,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ]),
+                  Text(diagnostico.isEmpty
+                      ? "Sin diagnóstico registrado todavía."
+                      : diagnostico,
+                    style: TextStyle(fontFamily: 'Ubuntu',
+                      color: diagnostico.isEmpty ? _kWhite.withOpacity(0.30) : _kWhite.withOpacity(0.65),
+                      fontSize: 13, height: 1.5,
+                      fontStyle: diagnostico.isEmpty ? FontStyle.italic : FontStyle.normal)),
+                ])),
+
                 // ── Inspección de daños ──────────────────────────────────
                 _card(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -707,6 +900,29 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       ),
                     ),
                   ),
+                ])),
+
+                // ── Actualizaciones durante el trabajo ───────────────────
+                _card(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Row(children: [
+                    Expanded(child: _section("Actualizaciones", actualizaciones.length,
+                      Icons.update_rounded)),
+                    IconButton(
+                      icon: Icon(Icons.add_circle_outline_rounded, color: _kBlue.withOpacity(0.85), size: 20),
+                      tooltip: "Agregar actualización",
+                      onPressed: _agregarActualizacion,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ]),
+                  Text("Sube fotos con una nota cuando encuentres algo mientras trabajas — el cliente lo ve en el QR.",
+                    style: TextStyle(fontFamily: 'Ubuntu',
+                      color: _kWhite.withOpacity(0.30), fontSize: 11)),
+                  if (actualizaciones.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    ...actualizaciones.map((a) => _actualizacionCard(a)),
+                  ],
                 ])),
 
                 // ── Botones de acción ────────────────────────────────────
@@ -996,6 +1212,84 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
           ),
         ),
     ]);
+  }
+
+  Widget _actualizacionCard(Map<String, dynamic> a) {
+    final actId = int.tryParse((a['id'] ?? '').toString());
+    final nota = (a['nota'] ?? '').toString();
+    final fechaRaw = (a['created_at'] ?? '').toString();
+    final fecha = DateTime.tryParse(fechaRaw);
+    final fechaStr = fecha == null ? "" :
+      "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')} · "
+      "${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}";
+    final fotosA = (a['fotos'] as List? ?? []).cast<Map<String, dynamic>>();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orangeAccent.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: Colors.orangeAccent.withOpacity(0.20))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(fechaStr, style: TextStyle(
+            fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.35), fontSize: 11))),
+          if (actId != null)
+            GestureDetector(
+              onTap: () => _eliminarActualizacion(actId),
+              child: Icon(Icons.delete_outline_rounded,
+                color: Colors.redAccent.withOpacity(0.7), size: 17),
+            ),
+        ]),
+        if (nota.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 4, bottom: 6),
+            child: Text(nota, style: TextStyle(fontFamily: 'Ubuntu',
+              color: _kWhite.withOpacity(0.65), fontSize: 13, height: 1.4))),
+        if (fotosA.isNotEmpty)
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: fotosA.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) {
+                final f = fotosA[i];
+                final url = (f['url'] ?? '').toString();
+                final fotoId = int.tryParse((f['id'] ?? '').toString());
+                return Stack(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(url, width: 64, height: 64, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(width: 64, height: 64,
+                        color: _kBlue.withOpacity(0.08),
+                        child: Icon(Icons.broken_image_rounded, color: _kWhite.withOpacity(0.2), size: 16))),
+                  ),
+                  if (fotoId != null)
+                    Positioned(right: 2, top: 2, child: GestureDetector(
+                      onTap: () => _eliminarFotoActualizacion(fotoId),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.close_rounded, color: Colors.white, size: 11),
+                      ),
+                    )),
+                ]);
+              },
+            ),
+          ),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: actId == null ? null : () => _agregarFotosAActualizacion(actId),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.add_a_photo_rounded, color: _kBlue.withOpacity(0.8), size: 13),
+            const SizedBox(width: 4),
+            Text("Agregar foto", style: TextStyle(fontFamily: 'Ubuntu',
+              color: _kBlue.withOpacity(0.8), fontWeight: FontWeight.w700, fontSize: 11)),
+          ]),
+        ),
+      ]),
+    );
   }
 }
 

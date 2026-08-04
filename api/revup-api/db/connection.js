@@ -72,6 +72,11 @@ const REPUESTOS = [
 export async function ensureSchema() {
   await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_b64 TEXT`);
 
+  // Diagnóstico / notas generales de la OT (más allá de los síntomas del
+  // cliente y de las observaciones puntuales de cada daño): lo que el
+  // mecánico encontró/hizo/recomienda, visible también en el QR público.
+  await pool.query(`ALTER TABLE ordenes_trabajo ADD COLUMN IF NOT EXISTS diagnostico TEXT`);
+
   // Campos nuevos del vehículo
   await pool.query(`ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS tipo_combustible TEXT`);
   await pool.query(`ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS transmision TEXT`);
@@ -149,6 +154,27 @@ export async function ensureSchema() {
   // 'ingreso'/'entrega' se controla en la API (igual que "vista"), no con
   // un CHECK, para no depender de si la columna es nueva o vino del CREATE.
   await pool.query(`ALTER TABLE orden_danos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'ingreso'`);
+
+  // Actualizaciones durante el trabajo: el mecánico encuentra algo mientras
+  // repara (ej. un daño adicional no reportado) y sube foto + nota como
+  // evidencia, visible también para el cliente en el QR — no solo se
+  // documenta al ingresar/entregar, sino sobre la marcha.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orden_actualizaciones (
+      id SERIAL PRIMARY KEY,
+      orden_id INTEGER NOT NULL REFERENCES ordenes_trabajo(id) ON DELETE CASCADE,
+      nota TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orden_actualizacion_fotos (
+      id SERIAL PRIMARY KEY,
+      actualizacion_id INTEGER NOT NULL REFERENCES orden_actualizaciones(id) ON DELETE CASCADE,
+      ruta TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orden_dano_fotos (
       id SERIAL PRIMARY KEY,

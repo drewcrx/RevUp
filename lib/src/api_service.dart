@@ -897,6 +897,82 @@ class ApiService {
   }
 
   // =========================
+  // DIAGNÓSTICO / ACTUALIZACIONES DE LA OT (privado)
+  // =========================
+
+  static Future<void> actualizarDiagnosticoOT({
+    required int ordenId,
+    required String diagnostico,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/$ordenId/diagnostico");
+    final res = await http
+        .put(url, headers: _headersAuth(), body: jsonEncode({"diagnostico": diagnostico}))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo guardar el diagnóstico");
+    }
+  }
+
+  static Future<Map<String, dynamic>> agregarActualizacionOT({
+    required int ordenId,
+    String? nota,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/$ordenId/actualizaciones");
+    final res = await http
+        .post(url, headers: _headersAuth(), body: jsonEncode({"nota": nota}))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 201) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw _httpError(res, "No se pudo agregar la actualización");
+  }
+
+  static Future<void> eliminarActualizacionOT(int actualizacionId) async {
+    final url = Uri.parse("$baseUrl/ordenes/actualizaciones/$actualizacionId");
+    final res = await http
+        .delete(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo eliminar la actualización");
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> subirFotosActualizacion({
+    required int actualizacionId,
+    required List<XFile> archivos,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/actualizaciones/$actualizacionId/fotos");
+    final request = http.MultipartRequest('POST', url);
+
+    final t = Session.token;
+    if (t != null && t.trim().isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $t';
+    }
+    for (final archivo in archivos) {
+      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+    }
+
+    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final res = await http.Response.fromStream(streamed);
+
+    if (res.statusCode == 201) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "No se pudieron subir las fotos");
+  }
+
+  static Future<void> eliminarFotoActualizacion(int fotoId) async {
+    final url = Uri.parse("$baseUrl/ordenes/actualizaciones/fotos/$fotoId");
+    final res = await http
+        .delete(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo eliminar la foto");
+    }
+  }
+
+  // =========================
   // REPORTES (privado)
   // =========================
 

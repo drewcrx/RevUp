@@ -100,6 +100,14 @@ function shellPage(bodyHtml, title) {
     .trabajo-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.35);margin-bottom:6px;}
     .trabajo-item{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;color:rgba(240,244,255,0.65);}
     .trabajo-item .precio{color:${kBlue};font-weight:700;flex-shrink:0;}
+    .diagnostico-block{margin-top:10px;padding:10px 12px;border-radius:8px;background:rgba(30,144,255,0.05);border:1px solid rgba(30,144,255,0.14);}
+    .diagnostico-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:${kBlue};margin-bottom:4px;}
+    .diagnostico-texto{font-size:12px;color:rgba(240,244,255,0.70);line-height:1.5;white-space:pre-wrap;}
+    .act-grupo{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(30,144,255,0.14);}
+    .act-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.35);margin-bottom:6px;}
+    .act-item{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:rgba(255,167,38,0.04);border:1px solid rgba(255,167,38,0.16);}
+    .act-fecha{font-size:10px;color:rgba(240,244,255,0.35);margin-bottom:3px;}
+    .act-nota{font-size:12px;color:rgba(240,244,255,0.70);line-height:1.4;}
     .note{margin-top:18px;font-size:11px;color:rgba(240,244,255,0.28);line-height:1.5;text-align:center;}
     .card-footer{
       padding:12px 22px;border-top:1px solid rgba(30,144,255,0.08);background:#060B18;
@@ -227,6 +235,37 @@ function renderVehiculo(v, ots) {
           ? `${grupoDanosTipo("DAÑOS AL INGRESAR", danosIngreso)}${grupoDanosTipo("DAÑOS AL ENTREGAR", danosEntrega)}`
           : "";
 
+        const diagnostico = escapeHtml(o.diagnostico || "");
+        const diagnosticoHtml = diagnostico ? `
+          <div class="diagnostico-block">
+            <div class="diagnostico-label">DIAGNÓSTICO DEL MECÁNICO</div>
+            <div class="diagnostico-texto">${diagnostico}</div>
+          </div>` : "";
+
+        const entregadoEl = o.closed_at
+          ? `Entregado el ${new Date(o.closed_at).toLocaleDateString("es-EC")}` : "";
+
+        const actualizaciones = o.actualizaciones || [];
+        const actualizacionesHtml = actualizaciones.length ? `
+          <div class="act-grupo">
+            <div class="act-label">ACTUALIZACIONES DURANTE EL TRABAJO (${actualizaciones.length})</div>
+            ${actualizaciones.map((a) => {
+              const fechaAct = new Date(a.created_at).toLocaleString("es-EC",
+                { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+              const nota = escapeHtml(a.nota || "");
+              const fotosA = a.fotos || [];
+              return `
+                <div class="act-item">
+                  <div class="act-fecha">${fechaAct}</div>
+                  ${nota ? `<div class="act-nota">${nota}</div>` : ""}
+                  ${fotosA.length ? `<div class="fotos-grid" style="margin-top:6px;">
+                    ${fotosA.map((url) => `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy" /></a>`).join("")}
+                  </div>` : ""}
+                </div>
+              `;
+            }).join("")}
+          </div>` : "";
+
         return `
           <div class="hist-item">
             <div class="hist-top">
@@ -234,14 +273,17 @@ function renderVehiculo(v, ots) {
               <span class="hist-date">${fecha}${km ? " · " + km : ""}</span>
             </div>
             ${sintomas ? `<div class="hist-sintomas">${sintomas}</div>` : ""}
+            ${entregadoEl ? `<div class="hist-date" style="margin-top:4px;">${entregadoEl}</div>` : ""}
             <div class="hist-bottom">
               <span class="chip" style="background:${oPago.color}22;color:${oPago.color};border:1px solid ${oPago.color}55;">${oPago.label}</span>
               <span class="hist-total">$${Number(o.total || 0).toFixed(2)}</span>
             </div>
+            ${diagnosticoHtml}
             ${trabajo}
             ${grupoFotos("Al ingresar", fotosIngreso)}
             ${grupoFotos("Al entregar", fotosEntrega)}
             ${grupoDanos}
+            ${actualizacionesHtml}
           </div>
         `;
       }).join("")
@@ -289,7 +331,8 @@ router.get("/:token", async (req, res) => {
 
     const otq = await pool.query(
       `SELECT
-         id, symptoms, estado, pago_estado, total, kilometraje_ot, created_at,
+         id, symptoms, diagnostico, estado, pago_estado, total, kilometraje_ot,
+         created_at, closed_at,
          CASE
            WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
            WHEN estado = 'RECIBIDO'
@@ -359,6 +402,28 @@ router.get("/:token", async (req, res) => {
       const repuestosPorOrden = {};
       for (const r of rq.rows) (repuestosPorOrden[r.orden_id] ??= []).push(r);
       for (const o of ots) o.repuestos = repuestosPorOrden[o.id] || [];
+
+      const aq = await pool.query(
+        `SELECT id, orden_id, nota, created_at FROM orden_actualizaciones
+         WHERE orden_id = ANY($1::int[]) ORDER BY created_at ASC`,
+        [ids]
+      );
+      const actualizacionesPorOrden = {};
+      for (const a of aq.rows) (actualizacionesPorOrden[a.orden_id] ??= []).push(a);
+
+      if (aq.rowCount > 0) {
+        const actIds = aq.rows.map((a) => a.id);
+        const afq = await pool.query(
+          `SELECT actualizacion_id, ruta FROM orden_actualizacion_fotos WHERE actualizacion_id = ANY($1::int[])`,
+          [actIds]
+        );
+        const fotosPorAct = {};
+        for (const f of afq.rows) (fotosPorAct[f.actualizacion_id] ??= []).push(`${base}/uploads/${f.ruta}`);
+        for (const list of Object.values(actualizacionesPorOrden)) {
+          for (const a of list) a.fotos = fotosPorAct[a.id] || [];
+        }
+      }
+      for (const o of ots) o.actualizaciones = actualizacionesPorOrden[o.id] || [];
     }
 
     return res.send(renderVehiculo(v, ots));
