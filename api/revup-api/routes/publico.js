@@ -196,30 +196,36 @@ function renderVehiculo(v, ots) {
           </div>` : "";
 
         const danos = o.danos || [];
-        const grupoDanos = danos.length ? `
+        const danoItemHtml = (d) => {
+          const vista = escapeHtml(VISTA_LABELS[d.vista] || d.vista);
+          const zona = escapeHtml(d.zona);
+          const estado = escapeHtml(d.estado_dano || "");
+          const reparacion = escapeHtml(d.tipo_reparacion || "");
+          const obs = escapeHtml(d.observaciones || "");
+          const fotosD = d.fotos || [];
+          return `
+            <div class="dano-item">
+              <div class="dano-top">
+                <span>${vista} · ${zona}</span>
+                <span>${estado}${reparacion ? " · " + reparacion : ""}</span>
+              </div>
+              ${obs ? `<div class="dano-obs">${obs}</div>` : ""}
+              ${fotosD.length ? `<div class="fotos-grid" style="margin-top:6px;">
+                ${fotosD.map((url) => `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy" /></a>`).join("")}
+              </div>` : ""}
+            </div>
+          `;
+        };
+        const danosIngreso = danos.filter((d) => d.tipo !== "entrega");
+        const danosEntrega = danos.filter((d) => d.tipo === "entrega");
+        const grupoDanosTipo = (label, lista) => lista.length ? `
           <div class="danos-grupo">
-            <div class="danos-label">INSPECCIÓN DE DAÑOS (${danos.length})</div>
-            ${danos.map((d) => {
-              const vista = escapeHtml(VISTA_LABELS[d.vista] || d.vista);
-              const zona = escapeHtml(d.zona);
-              const estado = escapeHtml(d.estado_dano || "");
-              const reparacion = escapeHtml(d.tipo_reparacion || "");
-              const obs = escapeHtml(d.observaciones || "");
-              const fotosD = d.fotos || [];
-              return `
-                <div class="dano-item">
-                  <div class="dano-top">
-                    <span>${vista} · ${zona}</span>
-                    <span>${estado}${reparacion ? " · " + reparacion : ""}</span>
-                  </div>
-                  ${obs ? `<div class="dano-obs">${obs}</div>` : ""}
-                  ${fotosD.length ? `<div class="fotos-grid" style="margin-top:6px;">
-                    ${fotosD.map((url) => `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy" /></a>`).join("")}
-                  </div>` : ""}
-                </div>
-              `;
-            }).join("")}
+            <div class="danos-label">${label} (${lista.length})</div>
+            ${lista.map(danoItemHtml).join("")}
           </div>` : "";
+        const grupoDanos = danosIngreso.length || danosEntrega.length
+          ? `${grupoDanosTipo("DAÑOS AL INGRESAR", danosIngreso)}${grupoDanosTipo("DAÑOS AL ENTREGAR", danosEntrega)}`
+          : "";
 
         return `
           <div class="hist-item">
@@ -315,7 +321,7 @@ router.get("/:token", async (req, res) => {
       for (const o of ots) o.fotos = porOrden[o.id] || [];
 
       const dq = await pool.query(
-        `SELECT id, orden_id, vista, zona, estado_dano, tipo_reparacion, observaciones
+        `SELECT id, orden_id, tipo, vista, zona, estado_dano, tipo_reparacion, observaciones
          FROM orden_danos WHERE orden_id = ANY($1::int[])`,
         [ids]
       );

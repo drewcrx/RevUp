@@ -55,6 +55,7 @@ function subirFotosMiddleware(req, res, next) {
 const VISTAS_VALIDAS = new Set([
   "frontal", "posterior", "lateral_izquierdo", "lateral_derecho", "superior",
 ]);
+const TIPOS_DANO_VALIDOS = new Set(["ingreso", "entrega"]);
 
 const danoFotosStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
@@ -460,7 +461,7 @@ router.delete("/fotos/:fotoId", async (req, res) => {
 // =========================
 router.post("/:id/danos", async (req, res) => {
   const ordenId = Number(req.params.id);
-  const { vista, zona, estado_dano, tipo_reparacion, observaciones } = req.body || {};
+  const { vista, zona, tipo, estado_dano, tipo_reparacion, observaciones } = req.body || {};
 
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (!VISTAS_VALIDAS.has(String(vista || ""))) {
@@ -469,17 +470,21 @@ router.post("/:id/danos", async (req, res) => {
   if (!zona || !String(zona).trim()) {
     return res.status(400).json({ error: "zona es obligatoria" });
   }
+  const tipoDano = tipo ? String(tipo) : "ingreso";
+  if (!TIPOS_DANO_VALIDOS.has(tipoDano)) {
+    return res.status(400).json({ error: "tipo inválido (ingreso o entrega)" });
+  }
 
   try {
     const ot = await getOtIfAllowed(ordenId, req.user);
     if (!ot) return res.status(404).json({ error: "OT no encontrada" });
 
     const q = await pool.query(
-      `INSERT INTO orden_danos (orden_id, vista, zona, estado_dano, tipo_reparacion, observaciones)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO orden_danos (orden_id, tipo, vista, zona, estado_dano, tipo_reparacion, observaciones)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
-        ordenId, vista, String(zona).trim(),
+        ordenId, tipoDano, vista, String(zona).trim(),
         estado_dano ? String(estado_dano).trim() : null,
         tipo_reparacion ? String(tipo_reparacion).trim() : null,
         observaciones ? String(observaciones).trim().slice(0, 500) : null,
@@ -503,6 +508,11 @@ router.put("/danos/:danoId", async (req, res) => {
     ? undefined : (String(b.tipo_reparacion || "").trim() || null);
   const observaciones = b.observaciones === undefined
     ? undefined : (String(b.observaciones || "").trim().slice(0, 500) || null);
+  const tipo = b.tipo === undefined ? undefined : String(b.tipo || "");
+
+  if (tipo !== undefined && !TIPOS_DANO_VALIDOS.has(tipo)) {
+    return res.status(400).json({ error: "tipo inválido (ingreso o entrega)" });
+  }
 
   const sets = [];
   const params = [];
@@ -512,6 +522,7 @@ router.put("/danos/:danoId", async (req, res) => {
   if (estadoDano !== undefined) addSet("estado_dano", estadoDano);
   if (tipoReparacion !== undefined) addSet("tipo_reparacion", tipoReparacion);
   if (observaciones !== undefined) addSet("observaciones", observaciones);
+  if (tipo !== undefined) addSet("tipo", tipo);
 
   if (sets.length === 0) {
     return res.status(400).json({ error: "No hay campos para actualizar" });

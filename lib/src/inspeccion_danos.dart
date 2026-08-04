@@ -177,6 +177,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
   List<String> reparacionOpciones = [];
 
   String vistaActual = 'frontal';
+  String tipoActual = 'ingreso'; // 'ingreso' | 'entrega'
 
   @override
   void initState() { super.initState(); _cargar(); }
@@ -201,8 +202,11 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
     }
   }
 
+  String _tipoDe(Map<String, dynamic> d) => (d['tipo'] ?? 'ingreso').toString();
+
   List<Map<String, dynamic>> _danosDeZona(String zona) => danos
-      .where((d) => d['vista'] == vistaActual && d['zona'] == zona)
+      .where((d) => d['vista'] == vistaActual && d['zona'] == zona
+          && _tipoDe(d) == tipoActual)
       .toList();
 
   void _snack(String msg, {bool error = false}) {
@@ -289,6 +293,21 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
             ListView(
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 40),
               children: [
+                // ── Selector ingreso / entrega ──────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: _kBlue.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: _kBlue.withOpacity(0.14)),
+                  ),
+                  child: Row(children: [
+                    Expanded(child: _tipoSegmento("ingreso", "Al ingresar", Icons.login_rounded)),
+                    Expanded(child: _tipoSegmento("entrega", "Al entregar", Icons.logout_rounded)),
+                  ]),
+                ),
+                const SizedBox(height: 14),
+
                 // ── Selector de vista ──────────────────────────────────────
                 SizedBox(
                   height: 40,
@@ -299,7 +318,8 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
                     itemBuilder: (_, i) {
                       final key = kVistaLabel.keys.elementAt(i);
                       final activo = key == vistaActual;
-                      final count = danos.where((d) => d['vista'] == key).length;
+                      final count = danos.where((d) =>
+                          d['vista'] == key && _tipoDe(d) == tipoActual).length;
                       return GestureDetector(
                         onTap: () => setState(() => vistaActual = key),
                         child: Container(
@@ -410,21 +430,55 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
 
                 const SizedBox(height: 24),
 
-                // ── Resumen general (todas las vistas) ──────────────────────
-                if (danos.isNotEmpty) ...[
+                // ── Resumen general (todas las vistas, del tipo actual) ──────
+                if (danos.any((d) => _tipoDe(d) == tipoActual)) ...[
                   Row(children: [
                     Container(width: 3, height: 16,
                       decoration: BoxDecoration(color: _kBlue, borderRadius: BorderRadius.circular(2))),
                     const SizedBox(width: 10),
-                    Text("Resumen de daños (${danos.length})", style: const TextStyle(
-                      fontFamily: 'Ubuntu', color: _kWhite,
+                    Text("Resumen de daños (${danos.where((d) => _tipoDe(d) == tipoActual).length})",
+                      style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite,
                       fontWeight: FontWeight.w700, fontSize: 13)),
                   ]),
                   const SizedBox(height: 10),
-                  ...danos.map((d) => _resumenItem(d)),
+                  ...danos.where((d) => _tipoDe(d) == tipoActual).map((d) => _resumenItem(d)),
                 ],
               ],
             ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _tipoSegmento(String tipo, String label, IconData icon) {
+    final activo = tipo == tipoActual;
+    final n = danos.where((d) => _tipoDe(d) == tipo).length;
+    return GestureDetector(
+      onTap: () => setState(() => tipoActual = tipo),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: activo ? _kBlue.withOpacity(0.16) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 14, color: activo ? _kBlue : _kWhite.withOpacity(0.4)),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontFamily: 'Ubuntu',
+            color: activo ? _kWhite : _kWhite.withOpacity(0.45),
+            fontWeight: activo ? FontWeight.w700 : FontWeight.w500, fontSize: 12)),
+          if (n > 0) ...[
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: _kDano.withOpacity(0.20),
+                borderRadius: BorderRadius.circular(999)),
+              child: Text("$n", style: const TextStyle(
+                fontFamily: 'Ubuntu', color: _kDano,
+                fontWeight: FontWeight.w800, fontSize: 10)),
+            ),
+          ],
         ]),
       ),
     );
@@ -632,7 +686,9 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
               border: Border.all(color: _kBlue.withOpacity(0.18))),
             child: Column(mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("Nuevo daño · $zona", style: const TextStyle(fontFamily: 'Ubuntu',
+              Text(
+                "Nuevo daño (${tipoActual == 'entrega' ? 'al entregar' : 'al ingresar'}) · $zona",
+                style: const TextStyle(fontFamily: 'Ubuntu',
                 color: _kWhite, fontWeight: FontWeight.w700, fontSize: 15)),
               const SizedBox(height: 16),
               _dropdownDialog("Estado del daño", estado, estadoOpciones,
@@ -677,6 +733,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
                     try {
                       await ApiService.agregarDano(
                         ordenId: widget.ordenId, vista: vistaActual, zona: zona,
+                        tipo: tipoActual,
                         estadoDano: estado, tipoReparacion: reparacion,
                         observaciones: obsCtrl.text.trim().isEmpty ? null : obsCtrl.text.trim(),
                       );

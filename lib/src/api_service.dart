@@ -809,6 +809,7 @@ class ApiService {
     required int ordenId,
     required String vista,
     required String zona,
+    String tipo = "ingreso",
     String? estadoDano,
     String? tipoReparacion,
     String? observaciones,
@@ -816,7 +817,7 @@ class ApiService {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/danos");
     final res = await http
         .post(url, headers: _headersAuth(), body: jsonEncode({
-          "vista": vista, "zona": zona,
+          "vista": vista, "zona": zona, "tipo": tipo,
           "estado_dano": estadoDano, "tipo_reparacion": tipoReparacion,
           "observaciones": observaciones,
         }))
@@ -830,12 +831,14 @@ class ApiService {
 
   static Future<void> actualizarDano({
     required int danoId,
+    String? tipo,
     String? estadoDano,
     String? tipoReparacion,
     String? observaciones,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/danos/$danoId");
     final Map<String, dynamic> body = {};
+    if (tipo != null) body["tipo"] = tipo;
     if (estadoDano != null) body["estado_dano"] = estadoDano;
     if (tipoReparacion != null) body["tipo_reparacion"] = tipoReparacion;
     if (observaciones != null) body["observaciones"] = observaciones;

@@ -128,11 +128,14 @@ export async function ensureSchema() {
     )
   `);
 
-  // Inspección de daños: zona marcada sobre el esquema del vehículo
+  // Inspección de daños: zona marcada sobre el esquema del vehículo.
+  // tipo distingue si se registró al ingresar el auto o al entregarlo,
+  // igual que orden_fotos — así sirve como prueba de "así llegó, así salió".
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orden_danos (
       id SERIAL PRIMARY KEY,
       orden_id INTEGER NOT NULL REFERENCES ordenes_trabajo(id) ON DELETE CASCADE,
+      tipo TEXT NOT NULL DEFAULT 'ingreso',
       vista TEXT NOT NULL,
       zona TEXT NOT NULL,
       estado_dano TEXT,
@@ -141,6 +144,11 @@ export async function ensureSchema() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  // La tabla ya existía antes de agregar "tipo" (Fase 3); esto la agrega en
+  // las instalaciones que la crearon sin esa columna. La validez de
+  // 'ingreso'/'entrega' se controla en la API (igual que "vista"), no con
+  // un CHECK, para no depender de si la columna es nueva o vino del CREATE.
+  await pool.query(`ALTER TABLE orden_danos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'ingreso'`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orden_dano_fotos (
       id SERIAL PRIMARY KEY,
