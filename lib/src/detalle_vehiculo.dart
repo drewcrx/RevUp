@@ -433,71 +433,89 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
 
   Future<pw.Font?> _loadProjectFont() async {
     try {
-      final fontData = await rootBundle.load('fonts/BBHSansBogle-Regular.ttf');
+      final fontData = await rootBundle.load('fonts/Ubuntu-Light.ttf');
       return pw.Font.ttf(fontData);
+    } catch (_) { return null; }
+  }
+
+  Future<ui.Image?> _loadLogoImage() async {
+    try {
+      final bytes = await rootBundle.load('assets/images/RevUp.png');
+      final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      return frame.image;
     } catch (_) { return null; }
   }
 
   pw.Widget _buildStickerWidget({
     required Uint8List qrBytes, required String placa,
-    required String marcaModelo, required int year,
+    required String marcaModelo,
     pw.Font? font, required double widthPt, required double heightPt,
   }) {
-    final green = PdfColor.fromInt(0xFF1E90FF);
-    final black = PdfColor.fromInt(0xFF000000);
+    final blue = PdfColor.fromInt(0xFF1E90FF);
+    final ink = PdfColor.fromInt(0xFF12161F);
+    final muted = PdfColor.fromInt(0xFF8892A4);
+    final hairline = PdfColor.fromInt(0xFFE2E6EE);
     final white = PdfColor.fromInt(0xFFFFFFFF);
-    final baseStyle = pw.TextStyle(font: font, color: black);
-    final boldStyle = pw.TextStyle(font: font, color: black, fontWeight: pw.FontWeight.bold);
-    final usableWidth = widthPt - 16;
-    final qrSize = (usableWidth - 12 - 2).clamp(80.0, 130.0).toDouble();
+    final baseStyle = pw.TextStyle(font: font, color: muted);
+    final boldStyle = pw.TextStyle(font: font, color: ink, fontWeight: pw.FontWeight.bold);
+    final usableWidth = widthPt - 20;
+    final qrSize = (usableWidth - 4).clamp(80.0, 130.0).toDouble();
 
     return pw.Container(
       width: widthPt, height: heightPt,
-      padding: const pw.EdgeInsets.all(8),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: pw.BoxDecoration(
-        color: white, borderRadius: pw.BorderRadius.circular(10),
-        border: pw.Border.all(color: green, width: 2),
+        color: white, borderRadius: pw.BorderRadius.circular(12),
+        border: pw.Border.all(color: hairline, width: 0.75),
       ),
       child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.center, children: [
-        pw.Container(
-          width: double.infinity,
-          padding: const pw.EdgeInsets.symmetric(vertical: 5),
-          decoration: pw.BoxDecoration(
-            color: green, borderRadius: pw.BorderRadius.circular(8)),
-          child: pw.Text('REVUP $year', textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(font: font, color: white, fontSize: 10,
-              fontWeight: pw.FontWeight.bold)),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(6),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(width: 1, color: green),
-            borderRadius: pw.BorderRadius.circular(10)),
-          child: pw.Image(pw.MemoryImage(qrBytes), width: qrSize, height: qrSize),
-        ),
-        pw.Spacer(),
+        // Wordmark discreto — sin bloque de color, solo tipografía.
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.center, children: [
+          pw.Container(width: 3, height: 3,
+            decoration: pw.BoxDecoration(color: blue, shape: pw.BoxShape.circle)),
+          pw.SizedBox(width: 4),
+          pw.Text('REVUP', style: pw.TextStyle(font: font, color: ink,
+            fontSize: 8, fontWeight: pw.FontWeight.bold, letterSpacing: 1.6)),
+        ]),
+        pw.SizedBox(height: 8),
+        pw.Image(pw.MemoryImage(qrBytes), width: qrSize, height: qrSize),
+        pw.SizedBox(height: 8),
+        pw.Container(width: 28, height: 0.75, color: hairline),
+        pw.SizedBox(height: 6),
         pw.Text(placa, textAlign: pw.TextAlign.center,
-          style: boldStyle.copyWith(fontSize: 16)),
-        pw.SizedBox(height: 4),
+          style: boldStyle.copyWith(fontSize: 15, letterSpacing: 0.5)),
+        pw.SizedBox(height: 2),
         pw.Text(marcaModelo, textAlign: pw.TextAlign.center,
-          style: baseStyle.copyWith(fontSize: 10), maxLines: 2),
+          style: baseStyle.copyWith(fontSize: 8.5), maxLines: 1,
+          overflow: pw.TextOverflow.clip),
+        pw.Spacer(),
+        pw.Text('Escanea para ver el historial', textAlign: pw.TextAlign.center,
+          style: baseStyle.copyWith(fontSize: 6.5)),
       ]),
     );
   }
 
-  Future<Uint8List> _generateQrPngBytes(String data) async {
-    final qrPainter = QrPainter(data: data, version: QrVersions.auto, gapless: true);
+  Future<Uint8List> _generateQrPngBytes(String data, {ui.Image? logo}) async {
+    final qrPainter = QrPainter(
+      data: data, version: QrVersions.auto, gapless: true,
+      // Nivel alto de corrección de errores: necesario para poder tapar el
+      // centro del QR con el logo sin que deje de poder escanearse.
+      errorCorrectionLevel: QrErrorCorrectLevel.H,
+      embeddedImage: logo,
+      embeddedImageStyle: logo == null ? null : const QrEmbeddedImageStyle(
+        size: Size(64, 64)),
+    );
     final ui.Image image = await qrPainter.toImage(350);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     return byteData!.buffer.asUint8List();
   }
 
   Future<void> _printSingleSticker({
-    required String qrData, required PdfPageFormat pageFormat, required pw.Font? font}) async {
+    required String qrData, required PdfPageFormat pageFormat,
+    required pw.Font? font, ui.Image? logo}) async {
     final pdf = pw.Document();
-    final qrBytes = await _generateQrPngBytes(qrData);
-    final year = DateTime.now().year;
+    final qrBytes = await _generateQrPngBytes(qrData, logo: logo);
     final bool isExact = (pageFormat.width == _sticker50x80.width) &&
         (pageFormat.height == _sticker50x80.height);
     final pageMargin = isExact ? pw.EdgeInsets.zero : const pw.EdgeInsets.all(8);
@@ -509,16 +527,16 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       build: (_) => pw.Center(child: _buildStickerWidget(
         qrBytes: qrBytes, placa: widget.vehiculo.placa,
         marcaModelo: '${widget.vehiculo.marca} ${widget.vehiculo.modelo}',
-        year: year, font: font, widthPt: contentW, heightPt: contentH)),
+        font: font, widthPt: contentW, heightPt: contentH)),
     ));
     await Printing.layoutPdf(onLayout: (_) async => pdf.save());
   }
 
   Future<void> _printStickersA4({
-    required String qrData, required int copies, required pw.Font? font}) async {
+    required String qrData, required int copies,
+    required pw.Font? font, ui.Image? logo}) async {
     final pdf = pw.Document();
-    final qrBytes = await _generateQrPngBytes(qrData);
-    final year = DateTime.now().year;
+    final qrBytes = await _generateQrPngBytes(qrData, logo: logo);
     const cols = 3; const rows = 3; const perPage = cols * rows;
     const spacing = 12.0; const runSpacing = 12.0;
     final totalPages = (copies / perPage).ceil();
@@ -534,7 +552,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
           children: List.generate(end - start, (_) => _buildStickerWidget(
             qrBytes: qrBytes, placa: widget.vehiculo.placa,
             marcaModelo: '${widget.vehiculo.marca} ${widget.vehiculo.modelo}',
-            year: year, font: font,
+            font: font,
             widthPt: _sticker50x80.width, heightPt: _sticker50x80.height)),
         )),
       ));
@@ -547,6 +565,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final qrData = (widget.vehiculo.qrToken != null && widget.vehiculo.qrToken!.isNotEmpty)
         ? qrUrlParaToken(widget.vehiculo.qrToken!) : widget.vehiculo.placa;
     final font = await _loadProjectFont();
+    final logo = await _loadLogoImage();
     if (!mounted) return;
 
     await showModalBottomSheet(
@@ -581,7 +600,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             onTap: () async {
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
-                  qrData: qrData, pageFormat: _sticker50x80, font: font));
+                  qrData: qrData, pageFormat: _sticker50x80, font: font, logo: logo));
             },
           ),
           _printTile(
@@ -593,7 +612,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
               final copias = await _pedirCopiasA4();
               if (copias == null) return;
               await _runPrintJob(() => _printStickersA4(
-                  qrData: qrData, copies: copias, font: font));
+                  qrData: qrData, copies: copias, font: font, logo: logo));
             },
           ),
           _printTile(
@@ -603,7 +622,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             onTap: () async {
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
-                  qrData: qrData, pageFormat: _thermal80, font: font));
+                  qrData: qrData, pageFormat: _thermal80, font: font, logo: logo));
             },
           ),
           _printTile(
@@ -613,7 +632,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             onTap: () async {
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
-                  qrData: qrData, pageFormat: _thermal58, font: font));
+                  qrData: qrData, pageFormat: _thermal58, font: font, logo: logo));
             },
           ),
         ]),
