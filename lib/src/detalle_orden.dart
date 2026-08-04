@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'api_service.dart';
+import 'inspeccion_danos.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -46,6 +47,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       (data?['pagos'] as List? ?? []).cast<Map<String, dynamic>>();
   List<Map<String, dynamic>> get fotos =>
       (data?['fotos'] as List? ?? []).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get danos =>
+      (data?['danos'] as List? ?? []).cast<Map<String, dynamic>>();
 
   bool _subiendoFotos = false;
   final _picker = ImagePicker();
@@ -671,6 +674,39 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                   _fotosGrupo("Al ingresar", "ingreso"),
                   const SizedBox(height: 14),
                   _fotosGrupo("Al entregar", "entrega"),
+                ])),
+
+                // ── Inspección de daños ──────────────────────────────────
+                _card(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  _section("Inspección de daños", danos.length,
+                    Icons.warning_amber_rounded),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity, height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => InspeccionDanosPage(
+                            ordenId: widget.ordenId, placa: placa),
+                        ));
+                        _load();
+                      },
+                      icon: const Icon(Icons.directions_car_filled_rounded,
+                        color: _kBlue, size: 18),
+                      label: Text(danos.isEmpty
+                          ? "Registrar inspección de daños"
+                          : "Ver / editar inspección (${danos.length})",
+                        style: const TextStyle(fontFamily: 'Ubuntu',
+                          color: _kBlue, fontWeight: FontWeight.w700, fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: _kBlue.withOpacity(0.4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
                 ])),
 
                 // ── Botones de acción ────────────────────────────────────

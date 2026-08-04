@@ -9,7 +9,10 @@ import { requireAuth } from "../src/middleware/auth.js";
 const router = express.Router();
 router.use(requireAuth);
 
-const CATEGORIAS_VALIDAS = new Set(["color", "tipo_vehiculo", "combustible", "transmision"]);
+const CATEGORIAS_VALIDAS = new Set([
+  "color", "tipo_vehiculo", "combustible", "transmision",
+  "estado_dano", "tipo_reparacion",
+]);
 
 // GET /catalogos/marcas
 router.get("/marcas", async (_req, res) => {

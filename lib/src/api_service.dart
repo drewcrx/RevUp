@@ -715,6 +715,98 @@ class ApiService {
   }
 
   // =========================
+  // INSPECCIÓN DE DAÑOS (privado)
+  // =========================
+
+  static Future<Map<String, dynamic>> agregarDano({
+    required int ordenId,
+    required String vista,
+    required String zona,
+    String? estadoDano,
+    String? tipoReparacion,
+    String? observaciones,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/$ordenId/danos");
+    final res = await http
+        .post(url, headers: _headersAuth(), body: jsonEncode({
+          "vista": vista, "zona": zona,
+          "estado_dano": estadoDano, "tipo_reparacion": tipoReparacion,
+          "observaciones": observaciones,
+        }))
+        .timeout(const Duration(seconds: 10));
+
+    if (res.statusCode == 201) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw _httpError(res, "No se pudo agregar el daño");
+  }
+
+  static Future<void> actualizarDano({
+    required int danoId,
+    String? estadoDano,
+    String? tipoReparacion,
+    String? observaciones,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/danos/$danoId");
+    final Map<String, dynamic> body = {};
+    if (estadoDano != null) body["estado_dano"] = estadoDano;
+    if (tipoReparacion != null) body["tipo_reparacion"] = tipoReparacion;
+    if (observaciones != null) body["observaciones"] = observaciones;
+
+    final res = await http
+        .put(url, headers: _headersAuth(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo actualizar el daño");
+    }
+  }
+
+  static Future<void> eliminarDano(int danoId) async {
+    final url = Uri.parse("$baseUrl/ordenes/danos/$danoId");
+    final res = await http
+        .delete(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo eliminar el daño");
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> subirFotosDano({
+    required int danoId,
+    required List<XFile> archivos,
+  }) async {
+    final url = Uri.parse("$baseUrl/ordenes/danos/$danoId/fotos");
+    final request = http.MultipartRequest('POST', url);
+
+    final t = Session.token;
+    if (t != null && t.trim().isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $t';
+    }
+    for (final archivo in archivos) {
+      request.files.add(await http.MultipartFile.fromPath('fotos', archivo.path));
+    }
+
+    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final res = await http.Response.fromStream(streamed);
+
+    if (res.statusCode == 201) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "No se pudieron subir las fotos");
+  }
+
+  static Future<void> eliminarFotoDano(int fotoId) async {
+    final url = Uri.parse("$baseUrl/ordenes/danos/fotos/$fotoId");
+    final res = await http
+        .delete(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo eliminar la foto");
+    }
+  }
+
+  // =========================
   // REPORTES (privado)
   // =========================
 

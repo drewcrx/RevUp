@@ -25,6 +25,14 @@ function estadoInfo(estadoUi) {
   }
 }
 
+const VISTA_LABELS = {
+  frontal: "Frontal",
+  posterior: "Posterior",
+  lateral_izquierdo: "Lateral izquierdo",
+  lateral_derecho: "Lateral derecho",
+  superior: "Superior",
+};
+
 function pagoInfo(pagoEstado) {
   const pendiente = String(pagoEstado || "").toUpperCase().includes("PEND");
   return pendiente
@@ -80,6 +88,11 @@ function shellPage(bodyHtml, title) {
     .fotos-grid{display:flex;gap:6px;flex-wrap:wrap;}
     .fotos-grid a{display:block;width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid rgba(30,144,255,0.20);}
     .fotos-grid img{width:100%;height:100%;object-fit:cover;display:block;}
+    .danos-grupo{margin-top:12px;padding-top:10px;border-top:1px dashed rgba(30,144,255,0.14);}
+    .danos-label{font-size:10px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.35);margin-bottom:6px;}
+    .dano-item{padding:8px 10px;margin-bottom:6px;border-radius:8px;background:rgba(255,167,38,0.05);border:1px solid rgba(255,167,38,0.18);}
+    .dano-top{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#FFA726;font-weight:700;}
+    .dano-obs{margin-top:4px;font-size:11px;color:rgba(240,244,255,0.55);line-height:1.4;}
     .note{margin-top:18px;font-size:11px;color:rgba(240,244,255,0.28);line-height:1.5;text-align:center;}
     .card-footer{
       padding:12px 22px;border-top:1px solid rgba(30,144,255,0.08);background:#060B18;
@@ -144,6 +157,32 @@ function renderVehiculo(v, ots) {
             </div>
           </div>` : "";
 
+        const danos = o.danos || [];
+        const grupoDanos = danos.length ? `
+          <div class="danos-grupo">
+            <div class="danos-label">INSPECCIÓN DE DAÑOS (${danos.length})</div>
+            ${danos.map((d) => {
+              const vista = escapeHtml(VISTA_LABELS[d.vista] || d.vista);
+              const zona = escapeHtml(d.zona);
+              const estado = escapeHtml(d.estado_dano || "");
+              const reparacion = escapeHtml(d.tipo_reparacion || "");
+              const obs = escapeHtml(d.observaciones || "");
+              const fotosD = d.fotos || [];
+              return `
+                <div class="dano-item">
+                  <div class="dano-top">
+                    <span>${vista} · ${zona}</span>
+                    <span>${estado}${reparacion ? " · " + reparacion : ""}</span>
+                  </div>
+                  ${obs ? `<div class="dano-obs">${obs}</div>` : ""}
+                  ${fotosD.length ? `<div class="fotos-grid" style="margin-top:6px;">
+                    ${fotosD.map((url) => `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy" /></a>`).join("")}
+                  </div>` : ""}
+                </div>
+              `;
+            }).join("")}
+          </div>` : "";
+
         return `
           <div class="hist-item">
             <div class="hist-top">
@@ -157,6 +196,7 @@ function renderVehiculo(v, ots) {
             </div>
             ${grupoFotos("Al ingresar", fotosIngreso)}
             ${grupoFotos("Al entregar", fotosEntrega)}
+            ${grupoDanos}
           </div>
         `;
       }).join("")
@@ -232,6 +272,28 @@ router.get("/:token", async (req, res) => {
         (porOrden[f.orden_id] ??= []).push({ tipo: f.tipo, url: `${base}/uploads/${f.ruta}` });
       }
       for (const o of ots) o.fotos = porOrden[o.id] || [];
+
+      const dq = await pool.query(
+        `SELECT id, orden_id, vista, zona, estado_dano, tipo_reparacion, observaciones
+         FROM orden_danos WHERE orden_id = ANY($1::int[])`,
+        [ids]
+      );
+      const danosPorOrden = {};
+      for (const d of dq.rows) (danosPorOrden[d.orden_id] ??= []).push(d);
+
+      if (dq.rowCount > 0) {
+        const danoIds = dq.rows.map((d) => d.id);
+        const dfq = await pool.query(
+          `SELECT dano_id, ruta FROM orden_dano_fotos WHERE dano_id = ANY($1::int[])`,
+          [danoIds]
+        );
+        const fotosPorDano = {};
+        for (const f of dfq.rows) (fotosPorDano[f.dano_id] ??= []).push(`${base}/uploads/${f.ruta}`);
+        for (const list of Object.values(danosPorOrden)) {
+          for (const d of list) d.fotos = fotosPorDano[d.id] || [];
+        }
+      }
+      for (const o of ots) o.danos = danosPorOrden[o.id] || [];
     }
 
     return res.send(renderVehiculo(v, ots));

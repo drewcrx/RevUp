@@ -50,6 +50,52 @@ function subirFotosMiddleware(req, res, next) {
 }
 
 // =========================
+// Inspección de daños — vistas/zonas válidas + fotos por zona
+// =========================
+const VISTAS_VALIDAS = new Set([
+  "frontal", "posterior", "lateral_izquierdo", "lateral_derecho", "superior",
+]);
+
+const danoFotosStorage = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const dir = path.join(UPLOAD_DIR, `dano_${req.params.danoId}`);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    cb(null, `${crypto.randomUUID()}${ext}`);
+  },
+});
+
+const uploadDanoFotos = multer({
+  storage: danoFotosStorage,
+  limits: { fileSize: 8 * 1024 * 1024, files: 10 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Solo se permiten imágenes"));
+    }
+    cb(null, true);
+  },
+});
+
+function subirDanoFotosMiddleware(req, res, next) {
+  uploadDanoFotos.array("fotos", 10)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || "Error subiendo archivo" });
+    next();
+  });
+}
+
+// Verifica que el daño exista y que el usuario tenga acceso a la OT dueña
+async function getDanoIfAllowed(danoId, user) {
+  const d = await pool.query(`SELECT * FROM orden_danos WHERE id = $1`, [danoId]);
+  if (d.rowCount === 0) return null;
+  const ot = await getOtIfAllowed(d.rows[0].orden_id, user);
+  if (!ot) return null;
+  return d.rows[0];
+}
+
+// =========================
 // Helpers
 // =========================
 async function recalcularTotales(ordenId) {
@@ -302,12 +348,35 @@ router.get("/:id", async (req, res) => {
       [id]
     );
 
+    const danos = await pool.query(
+      `SELECT id, vista, zona, estado_dano, tipo_reparacion, observaciones, created_at
+       FROM orden_danos
+       WHERE orden_id = $1
+       ORDER BY created_at ASC`,
+      [id]
+    );
+    let danoFotosPorId = {};
+    if (danos.rowCount > 0) {
+      const danoIds = danos.rows.map((d) => d.id);
+      const df = await pool.query(
+        `SELECT id, dano_id, ruta, created_at
+         FROM orden_dano_fotos
+         WHERE dano_id = ANY($1::int[])
+         ORDER BY created_at ASC`,
+        [danoIds]
+      );
+      for (const f of df.rows) {
+        (danoFotosPorId[f.dano_id] ??= []).push({ ...f, url: fotoUrl(f.ruta) });
+      }
+    }
+
     return res.json({
       ot,
       servicios: servicios.rows,
       repuestos: repuestos.rows,
       pagos: pagos.rows,
       fotos: fotos.rows.map((f) => ({ ...f, url: fotoUrl(f.ruta) })),
+      danos: danos.rows.map((d) => ({ ...d, fotos: danoFotosPorId[d.id] || [] })),
     });
   } catch (e) {
     return res.status(500).json({ error: "Error cargando detalle", detalle: e.message });
@@ -379,6 +448,161 @@ router.delete("/fotos/:fotoId", async (req, res) => {
 
     const fullPath = path.join(UPLOAD_DIR, f.rows[0].ruta);
     fs.unlink(fullPath, () => {}); // best-effort, no bloquea la respuesta
+
+    return res.json({ mensaje: "Foto eliminada" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
+  }
+});
+
+// =========================
+// 3c) Inspección de daños: crear / editar / eliminar zona marcada
+// =========================
+router.post("/:id/danos", async (req, res) => {
+  const ordenId = Number(req.params.id);
+  const { vista, zona, estado_dano, tipo_reparacion, observaciones } = req.body || {};
+
+  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
+  if (!VISTAS_VALIDAS.has(String(vista || ""))) {
+    return res.status(400).json({ error: "vista inválida" });
+  }
+  if (!zona || !String(zona).trim()) {
+    return res.status(400).json({ error: "zona es obligatoria" });
+  }
+
+  try {
+    const ot = await getOtIfAllowed(ordenId, req.user);
+    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
+
+    const q = await pool.query(
+      `INSERT INTO orden_danos (orden_id, vista, zona, estado_dano, tipo_reparacion, observaciones)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [
+        ordenId, vista, String(zona).trim(),
+        estado_dano ? String(estado_dano).trim() : null,
+        tipo_reparacion ? String(tipo_reparacion).trim() : null,
+        observaciones ? String(observaciones).trim().slice(0, 500) : null,
+      ]
+    );
+
+    return res.status(201).json({ ...q.rows[0], fotos: [] });
+  } catch (e) {
+    return res.status(500).json({ error: "Error agregando daño", detalle: e.message });
+  }
+});
+
+router.put("/danos/:danoId", async (req, res) => {
+  const danoId = Number(req.params.danoId);
+  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
+
+  const b = req.body || {};
+  const estadoDano = b.estado_dano === undefined
+    ? undefined : (String(b.estado_dano || "").trim() || null);
+  const tipoReparacion = b.tipo_reparacion === undefined
+    ? undefined : (String(b.tipo_reparacion || "").trim() || null);
+  const observaciones = b.observaciones === undefined
+    ? undefined : (String(b.observaciones || "").trim().slice(0, 500) || null);
+
+  const sets = [];
+  const params = [];
+  let idx = 1;
+  function addSet(col, val) { sets.push(`${col} = $${idx++}`); params.push(val); }
+
+  if (estadoDano !== undefined) addSet("estado_dano", estadoDano);
+  if (tipoReparacion !== undefined) addSet("tipo_reparacion", tipoReparacion);
+  if (observaciones !== undefined) addSet("observaciones", observaciones);
+
+  if (sets.length === 0) {
+    return res.status(400).json({ error: "No hay campos para actualizar" });
+  }
+
+  try {
+    const dano = await getDanoIfAllowed(danoId, req.user);
+    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
+
+    params.push(danoId);
+    const q = await pool.query(
+      `UPDATE orden_danos SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+      params
+    );
+
+    return res.json(q.rows[0]);
+  } catch (e) {
+    return res.status(500).json({ error: "Error actualizando daño", detalle: e.message });
+  }
+});
+
+router.delete("/danos/:danoId", async (req, res) => {
+  const danoId = Number(req.params.danoId);
+  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const dano = await getDanoIfAllowed(danoId, req.user);
+    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
+
+    const fotosRes = await pool.query(
+      `SELECT ruta FROM orden_dano_fotos WHERE dano_id = $1`, [danoId]);
+
+    await pool.query(`DELETE FROM orden_danos WHERE id = $1`, [danoId]);
+
+    for (const f of fotosRes.rows) {
+      fs.unlink(path.join(UPLOAD_DIR, f.ruta), () => {});
+    }
+
+    return res.json({ mensaje: "Daño eliminado" });
+  } catch (e) {
+    return res.status(500).json({ error: "Error eliminando daño", detalle: e.message });
+  }
+});
+
+router.post("/danos/:danoId/fotos", subirDanoFotosMiddleware, async (req, res) => {
+  const danoId = Number(req.params.danoId);
+  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const dano = await getDanoIfAllowed(danoId, req.user);
+    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
+
+    const files = req.files || [];
+    if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });
+
+    const inserted = [];
+    for (const file of files) {
+      const relPath = `dano_${danoId}/${file.filename}`;
+      const q = await pool.query(
+        `INSERT INTO orden_dano_fotos (dano_id, ruta)
+         VALUES ($1, $2)
+         RETURNING id, dano_id, ruta, created_at`,
+        [danoId, relPath]
+      );
+      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
+    }
+
+    return res.status(201).json(inserted);
+  } catch (e) {
+    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
+  }
+});
+
+router.delete("/danos/fotos/:fotoId", async (req, res) => {
+  const fotoId = Number(req.params.fotoId);
+  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const f = await pool.query(
+      `SELECT f.id, f.ruta, f.dano_id
+       FROM orden_dano_fotos f
+       WHERE f.id = $1`,
+      [fotoId]
+    );
+    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
+
+    const allowed = await getDanoIfAllowed(f.rows[0].dano_id, req.user);
+    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
+
+    await pool.query(`DELETE FROM orden_dano_fotos WHERE id = $1`, [fotoId]);
+    fs.unlink(path.join(UPLOAD_DIR, f.rows[0].ruta), () => {});
 
     return res.json({ mensaje: "Foto eliminada" });
   } catch (e) {

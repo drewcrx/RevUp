@@ -37,6 +37,8 @@ const ITEMS_FLAT = {
   ],
   combustible: ["Gasolina", "Diésel", "Híbrido", "Eléctrico", "GLP", "Otro"],
   transmision: ["Manual", "Automática", "CVT", "Otro"],
+  estado_dano: ["Rayón", "Abolladura", "Rotura", "Óxido", "Desgaste", "Golpe", "Otro"],
+  tipo_reparacion: ["Pintura", "Reemplazo", "Reparación / Enderezada", "Pulido", "Soldadura", "Otro"],
 };
 
 const REPUESTOS = [
@@ -121,6 +123,28 @@ export async function ensureSchema() {
       id SERIAL PRIMARY KEY,
       orden_id INTEGER NOT NULL REFERENCES ordenes_trabajo(id) ON DELETE CASCADE,
       tipo TEXT NOT NULL CHECK (tipo IN ('ingreso', 'entrega')),
+      ruta TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // Inspección de daños: zona marcada sobre el esquema del vehículo
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orden_danos (
+      id SERIAL PRIMARY KEY,
+      orden_id INTEGER NOT NULL REFERENCES ordenes_trabajo(id) ON DELETE CASCADE,
+      vista TEXT NOT NULL,
+      zona TEXT NOT NULL,
+      estado_dano TEXT,
+      tipo_reparacion TEXT,
+      observaciones TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orden_dano_fotos (
+      id SERIAL PRIMARY KEY,
+      dano_id INTEGER NOT NULL REFERENCES orden_danos(id) ON DELETE CASCADE,
       ruta TEXT NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
