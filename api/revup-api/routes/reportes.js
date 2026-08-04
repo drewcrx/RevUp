@@ -71,10 +71,40 @@ router.get("/mi-resumen", async (req, res) => {
     const ingresos = Number(row.ingresos || 0);
     const gastos = Number(row.gastos || 0);
 
+    const repuestosTop = await pool.query(
+      `SELECT rp.nombre,
+              SUM(rp.cantidad) AS cantidad_total,
+              SUM(rp.cantidad * rp.precio_unitario) AS monto_total
+       FROM orden_repuestos rp
+       JOIN ordenes_trabajo ot ON ot.id = rp.orden_id
+       WHERE ot.mechanic_id = $1
+         AND rp.created_at >= $2::date
+         AND rp.created_at < (date_trunc('month', $2::date) + interval '1 month')::date
+       GROUP BY rp.nombre
+       ORDER BY cantidad_total DESC
+       LIMIT 5`,
+      [mechanicId, start]
+    );
+
+    const danosPorEstado = await pool.query(
+      `SELECT od.estado_dano, COUNT(*) AS cantidad
+       FROM orden_danos od
+       JOIN ordenes_trabajo ot ON ot.id = od.orden_id
+       WHERE ot.mechanic_id = $1
+         AND od.estado_dano IS NOT NULL
+         AND od.created_at >= $2::date
+         AND od.created_at < (date_trunc('month', $2::date) + interval '1 month')::date
+       GROUP BY od.estado_dano
+       ORDER BY cantidad DESC`,
+      [mechanicId, start]
+    );
+
     return res.json({
       ingresos,
       gastos,
       utilidad: ingresos - gastos,
+      repuestos_top: repuestosTop.rows,
+      danos_por_estado: danosPorEstado.rows,
     });
   } catch (e) {
     return res.status(500).json({ error: "Error en mi resumen mensual", detalle: e.message });
@@ -275,7 +305,35 @@ router.get("/resumen", requireSuper, async (req, res) => {
       [start]
     );
 
-    return res.json(q.rows[0]);
+    const repuestosTop = await pool.query(
+      `SELECT nombre,
+              SUM(cantidad) AS cantidad_total,
+              SUM(cantidad * precio_unitario) AS monto_total
+       FROM orden_repuestos
+       WHERE created_at >= $1::date
+         AND created_at < (date_trunc('month', $1::date) + interval '1 month')::date
+       GROUP BY nombre
+       ORDER BY cantidad_total DESC
+       LIMIT 5`,
+      [start]
+    );
+
+    const danosPorEstado = await pool.query(
+      `SELECT estado_dano, COUNT(*) AS cantidad
+       FROM orden_danos
+       WHERE estado_dano IS NOT NULL
+         AND created_at >= $1::date
+         AND created_at < (date_trunc('month', $1::date) + interval '1 month')::date
+       GROUP BY estado_dano
+       ORDER BY cantidad DESC`,
+      [start]
+    );
+
+    return res.json({
+      ...q.rows[0],
+      repuestos_top: repuestosTop.rows,
+      danos_por_estado: danosPorEstado.rows,
+    });
   } catch (e) {
     return res.status(500).json({ error: "Error en resumen mensual", detalle: e.message });
   }

@@ -141,6 +141,60 @@ class _ReportesPageState extends State<ReportesPage> {
       fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 0.4)),
   );
 
+  // ── Repuestos más usados / daños del mes ───────────────────────────────────
+  Widget _buildOperativoCard() {
+    final repuestos = (resumen?['repuestos_top'] as List? ?? []).cast<Map<String, dynamic>>();
+    final danos = (resumen?['danos_por_estado'] as List? ?? []).cast<Map<String, dynamic>>();
+    if (repuestos.isEmpty && danos.isEmpty) return const SizedBox.shrink();
+
+    return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _secHeader("Repuestos más usados", icon: Icons.build_circle_rounded),
+      _divider(),
+      if (repuestos.isEmpty)
+        Text("Sin repuestos registrados este mes", style: TextStyle(
+          fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.30), fontSize: 12))
+      else
+        ...repuestos.map((r) {
+          final nombre = (r['nombre'] ?? '').toString();
+          final cant = _money(r['cantidad_total']);
+          final monto = _money(r['monto_total']);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Expanded(child: Text(nombre, style: const TextStyle(
+                fontFamily: 'Ubuntu', color: _kWhite, fontSize: 12, fontWeight: FontWeight.w600))),
+              Text("×$cant", style: TextStyle(fontFamily: 'Ubuntu',
+                color: _kWhite.withOpacity(0.40), fontSize: 11)),
+              const SizedBox(width: 8),
+              Text("\$$monto", style: const TextStyle(fontFamily: 'Ubuntu',
+                color: _kBlue, fontWeight: FontWeight.w700, fontSize: 12)),
+            ]),
+          );
+        }),
+      if (danos.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        _divider(),
+        _secHeader("Daños registrados", icon: Icons.warning_amber_rounded),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: danos.map((d) {
+          final estado = (d['estado_dano'] ?? '').toString();
+          final cant = (d['cantidad'] ?? '0').toString();
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.orangeAccent.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orangeAccent.withOpacity(0.25)),
+            ),
+            child: Text("$estado · $cant", style: const TextStyle(
+              fontFamily: 'Ubuntu', color: Colors.orangeAccent,
+              fontWeight: FontWeight.w700, fontSize: 11)),
+          );
+        }).toList()),
+      ],
+    ]));
+  }
+
   // ── Tarjeta resumen ────────────────────────────────────────────────────────
   Widget _buildResumenCard() {
     if (resumen == null) return const SizedBox.shrink();
@@ -469,6 +523,8 @@ class _ReportesPageState extends State<ReportesPage> {
                     padding: const EdgeInsets.only(bottom: 40),
                     children: [
                       _buildResumenCard(),
+                      const SizedBox(height: 14),
+                      _buildOperativoCard(),
                       if (rows.isNotEmpty) ...[
                         const SizedBox(height: 14),
                         // Cabecera de sección de filas
