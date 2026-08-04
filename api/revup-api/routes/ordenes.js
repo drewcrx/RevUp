@@ -350,7 +350,7 @@ router.get("/:id", async (req, res) => {
     );
 
     const danos = await pool.query(
-      `SELECT id, vista, zona, estado_dano, tipo_reparacion, observaciones, created_at
+      `SELECT id, orden_id, tipo, vista, zona, estado_dano, tipo_reparacion, observaciones, created_at
        FROM orden_danos
        WHERE orden_id = $1
        ORDER BY created_at ASC`,
