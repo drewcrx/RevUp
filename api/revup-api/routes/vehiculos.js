@@ -35,6 +35,25 @@ async function ensureVehiculoOwnedByUserOr404(req, placaNorm) {
   return v.rowCount ? v.rows[0] : null;
 }
 
+// Resuelve un propietario a partir de texto libre (nombre/telefono),
+// reutilizando uno existente si ya hay un registro con el mismo
+// nombre+telefono (evita duplicados cuando distintos mecánicos escriben
+// al mismo cliente).
+async function findOrCreatePropietario(nombre, telefono) {
+  if (!nombre) return null;
+  const existente = await pool.query(
+    `SELECT id FROM propietarios WHERE nombre = $1 AND telefono IS NOT DISTINCT FROM $2 LIMIT 1`,
+    [nombre, telefono]
+  );
+  if (existente.rowCount > 0) return existente.rows[0].id;
+
+  const ins = await pool.query(
+    `INSERT INTO propietarios (nombre, telefono) VALUES ($1, $2) RETURNING id`,
+    [nombre, telefono]
+  );
+  return ins.rows[0].id;
+}
+
 async function ensureVehiculoByQrOwnedOr404(req, token) {
   const params = [token];
   let extra = "";
@@ -71,11 +90,12 @@ router.get("/qr/:token", async (req, res) => {
 
     const vehiculoRes = await pool.query(
       `SELECT v.id, v.marca, v.modelo, v.placa, v.kilometraje, v.ultima_visita,
-              v.anio, v.color, v.propietario_nombre, v.propietario_telefono, v.nota_ingreso,
-              v.tipo_vehiculo,
+              v.anio, v.color, v.nota_ingreso, v.tipo_vehiculo,
+              p.id AS propietario_id, p.nombre AS propietario_nombre, p.telefono AS propietario_telefono,
               q.qr_token
        FROM vehiculos v
        JOIN vehiculo_qr q ON q.vehiculo_id = v.id
+       LEFT JOIN propietarios p ON p.id = v.propietario_id
        WHERE q.qr_token = $1 AND q.activo = true
        LIMIT 1`,
       [token]
@@ -184,10 +204,12 @@ router.get("/", async (req, res) => {
     }
 
     const sql = `
-      SELECT v.*, q.qr_token
+      SELECT v.*, q.qr_token,
+             p.id AS propietario_id, p.nombre AS propietario_nombre, p.telefono AS propietario_telefono
       FROM vehiculos v
       LEFT JOIN vehiculo_qr q
         ON q.vehiculo_id = v.id AND q.activo = true
+      LEFT JOIN propietarios p ON p.id = v.propietario_id
       ${where}
       ORDER BY v.placa ASC
     `;
@@ -216,9 +238,12 @@ router.get("/:placa", async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT v.*, q.qr_token
+      `SELECT v.*, q.qr_token,
+              p.id AS propietario_id, p.nombre AS propietario_nombre, p.telefono AS propietario_telefono,
+              p.cedula AS propietario_cedula, p.email AS propietario_email
        FROM vehiculos v
        LEFT JOIN vehiculo_qr q ON q.vehiculo_id = v.id AND q.activo = true
+       LEFT JOIN propietarios p ON p.id = v.propietario_id
        WHERE v.placa = $1
        ${extra}
        LIMIT 1`,
@@ -255,6 +280,12 @@ router.post("/", async (req, res) => {
   // NUEVOS
   const anio = Number.isFinite(Number(b.anio)) ? Number(b.anio) : null;
   const color = (b.color ?? null) ? String(b.color).trim() : null;
+
+  // Propietario: por id existente (seleccionado en búsqueda) o por texto
+  // libre (nombre/teléfono), que crea o reutiliza un registro normalizado.
+  const propietarioIdBody = Number.isFinite(Number(b.propietario_id ?? b.propietarioId))
+    ? Number(b.propietario_id ?? b.propietarioId)
+    : null;
   const propietarioNombre = (b.propietario_nombre ?? b.propietarioNombre ?? null)
     ? String(b.propietario_nombre ?? b.propietarioNombre).trim()
     : null;
@@ -290,17 +321,22 @@ router.post("/", async (req, res) => {
 
     const mechanicId = req.user.id;
 
+    let propietarioId = propietarioIdBody;
+    if (!propietarioId && propietarioNombre) {
+      propietarioId = await findOrCreatePropietario(propietarioNombre, propietarioTelefono);
+    }
+
     const insertVeh = await client.query(
       `INSERT INTO vehiculos (
          marca, modelo, placa, kilometraje, ultima_visita, mechanic_id,
-         anio, color, propietario_nombre, propietario_telefono, nota_ingreso,
+         anio, color, propietario_id, nota_ingreso,
          tipo_vehiculo, tipo_combustible, transmision, cilindraje
        )
-       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10,$11, $12, $13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6, $7,$8,$9,$10, $11, $12,$13,$14)
        RETURNING id`,
       [
         marca, modelo, placa, kilometraje, ultima_visita, mechanicId,
-        anio, color, propietarioNombre, propietarioTelefono, notaIngreso,
+        anio, color, propietarioId, notaIngreso,
         tipoVehiculo, tipoCombustible, transmision, cilindraje
       ]
     );
@@ -384,13 +420,9 @@ router.put("/:placa", async (req, res) => {
   const anio = (b.anio === undefined) ? undefined : (Number.isFinite(Number(b.anio)) ? Number(b.anio) : null);
   const color = (b.color === undefined) ? undefined : ((b.color ?? null) ? String(b.color).trim() : null);
 
-  const propietarioNombre = (b.propietario_nombre === undefined && b.propietarioNombre === undefined)
-    ? undefined
-    : ((b.propietario_nombre ?? b.propietarioNombre ?? null) ? String(b.propietario_nombre ?? b.propietarioNombre).trim() : null);
-
-  const propietarioTelefono = (b.propietario_telefono === undefined && b.propietarioTelefono === undefined)
-    ? undefined
-    : ((b.propietario_telefono ?? b.propietarioTelefono ?? null) ? String(b.propietario_telefono ?? b.propietarioTelefono).trim() : null);
+  // El propietario ya no es un campo plano de vehiculos: se edita en
+  // /propietarios/:id (afecta a todos sus vehículos) o se reasigna con
+  // PUT /vehiculos/:placa/propietario.
 
   const notaIngreso = (b.nota_ingreso === undefined && b.notaIngreso === undefined)
     ? undefined
@@ -425,8 +457,6 @@ router.put("/:placa", async (req, res) => {
   if (ultima_visita !== undefined) addSet("ultima_visita", ultima_visita);
   if (anio !== undefined) addSet("anio", anio);
   if (color !== undefined) addSet("color", color);
-  if (propietarioNombre !== undefined) addSet("propietario_nombre", propietarioNombre);
-  if (propietarioTelefono !== undefined) addSet("propietario_telefono", propietarioTelefono);
   if (notaIngreso !== undefined) addSet("nota_ingreso", notaIngreso);
   if (tipoVehiculo !== undefined) addSet("tipo_vehiculo", tipoVehiculo);
   if (tipoCombustible !== undefined) addSet("tipo_combustible", tipoCombustible);
@@ -466,6 +496,62 @@ router.put("/:placa", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Error al actualizar vehículo", detalle: error.message });
+  }
+});
+
+// ===========================
+// PUT REASIGNAR PROPIETARIO (privado)
+// Body: { propietario_id } para uno existente, o { nombre, telefono }
+// para crear uno nuevo (o reutilizar uno con el mismo nombre+teléfono)
+// y asignarlo. El historial de OTs no se ve afectado: está ligado a la
+// placa, no al propietario.
+// ===========================
+router.put("/:placa/propietario", async (req, res) => {
+  const placa = String(req.params.placa || "").trim().toUpperCase();
+  if (!placa) return res.status(400).json({ error: "placa inválida" });
+
+  const b = req.body || {};
+  const propietarioIdBody = Number.isFinite(Number(b.propietario_id ?? b.propietarioId))
+    ? Number(b.propietario_id ?? b.propietarioId)
+    : null;
+  const nombre = b.nombre ? String(b.nombre).trim() : null;
+  const telefono = b.telefono ? String(b.telefono).trim() : null;
+
+  if (!propietarioIdBody && !nombre) {
+    return res.status(400).json({ error: "Falta propietario_id o nombre" });
+  }
+
+  try {
+    let propietarioId = propietarioIdBody;
+
+    if (propietarioId) {
+      const existe = await pool.query(`SELECT id FROM propietarios WHERE id = $1`, [propietarioId]);
+      if (existe.rowCount === 0) return res.status(404).json({ error: "Propietario no encontrado" });
+    } else {
+      propietarioId = await findOrCreatePropietario(nombre, telefono);
+    }
+
+    const params = [propietarioId, placa];
+    let extra = "";
+    if (!isSuper(req)) {
+      params.push(req.user.id);
+      extra = " AND mechanic_id = $3";
+    }
+
+    const result = await pool.query(
+      `UPDATE vehiculos SET propietario_id = $1 WHERE placa = $2 ${extra} RETURNING id`,
+      params
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: "Vehículo no encontrado" });
+
+    const p = await pool.query(
+      `SELECT id, nombre, telefono, cedula, email FROM propietarios WHERE id = $1`,
+      [propietarioId]
+    );
+
+    res.json({ mensaje: "Propietario reasignado correctamente", propietario: p.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: "Error al reasignar propietario", detalle: error.message });
   }
 });
 

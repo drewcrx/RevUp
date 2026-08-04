@@ -13,6 +13,7 @@ class Vehiculo {
   // NUEVOS
   int? anio;
   String? color;
+  int? propietarioId;
   String? propietarioNombre;
   String? propietarioTelefono;
   String? notaIngreso;
@@ -37,6 +38,7 @@ class Vehiculo {
     required this.ultimaVisita,
     this.anio,
     this.color,
+    this.propietarioId,
     this.propietarioNombre,
     this.propietarioTelefono,
     this.notaIngreso,
@@ -62,6 +64,9 @@ class Vehiculo {
 
       anio: map['anio'] is int ? map['anio'] as int : int.tryParse((map['anio'] ?? '').toString()),
       color: map['color']?.toString(),
+      propietarioId: map['propietario_id'] is int
+          ? map['propietario_id'] as int
+          : int.tryParse((map['propietario_id'] ?? '').toString()),
       propietarioNombre: map['propietario_nombre']?.toString(),
       propietarioTelefono: map['propietario_telefono']?.toString(),
       notaIngreso: map['nota_ingreso']?.toString(),
@@ -88,6 +93,7 @@ class Vehiculo {
       'ultima_visita': ultimaVisita?.toIso8601String(),
       'anio': anio,
       'color': color,
+      'propietario_id': propietarioId,
       'propietario_nombre': propietarioNombre,
       'propietario_telefono': propietarioTelefono,
       'nota_ingreso': notaIngreso,

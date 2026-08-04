@@ -99,6 +99,7 @@ class ApiService {
     // NUEVOS
     int? anio,
     String? color,
+    int? propietarioId,
     String? propietarioNombre,
     String? propietarioTelefono,
     String? notaIngreso,
@@ -127,11 +128,13 @@ class ApiService {
     if (anio != null) bodyData["anio"] = anio;
     if (color != null && color.trim().isNotEmpty) bodyData["color"] = color.trim();
 
-    if (propietarioNombre != null && propietarioNombre.trim().isNotEmpty) {
+    if (propietarioId != null) {
+      bodyData["propietario_id"] = propietarioId;
+    } else if (propietarioNombre != null && propietarioNombre.trim().isNotEmpty) {
       bodyData["propietario_nombre"] = propietarioNombre.trim();
-    }
-    if (propietarioTelefono != null && propietarioTelefono.trim().isNotEmpty) {
-      bodyData["propietario_telefono"] = propietarioTelefono.trim();
+      if (propietarioTelefono != null && propietarioTelefono.trim().isNotEmpty) {
+        bodyData["propietario_telefono"] = propietarioTelefono.trim();
+      }
     }
     if (notaIngreso != null && notaIngreso.trim().isNotEmpty) {
       final n = notaIngreso.trim();
@@ -170,8 +173,6 @@ class ApiService {
     // NUEVOS
     int? anio,
     String? color,
-    String? propietarioNombre,
-    String? propietarioTelefono,
     String? notaIngreso,
 
     // ✅ NUEVO
@@ -192,12 +193,6 @@ class ApiService {
     if (anio != null) body["anio"] = anio;
     if (color != null && color.trim().isNotEmpty) body["color"] = color.trim();
 
-    if (propietarioNombre != null && propietarioNombre.trim().isNotEmpty) {
-      body["propietario_nombre"] = propietarioNombre.trim();
-    }
-    if (propietarioTelefono != null && propietarioTelefono.trim().isNotEmpty) {
-      body["propietario_telefono"] = propietarioTelefono.trim();
-    }
     if (notaIngreso != null) {
       final n = notaIngreso.trim();
       body["nota_ingreso"] = n.isEmpty ? null : (n.length > 300 ? n.substring(0, 300) : n);
@@ -237,6 +232,98 @@ class ApiService {
     final res = await http.delete(url, headers: _headersAuth());
 
     return res.statusCode == 200 || res.statusCode == 204;
+  }
+
+  // =========================
+  // PROPIETARIOS (privado) — normalizado, 1 propietario -> N vehículos
+  // =========================
+
+  static Future<List<Map<String, dynamic>>> buscarPropietarios(String query) async {
+    final url = Uri.parse("$baseUrl/propietarios?q=${Uri.encodeQueryComponent(query)}");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final List data = jsonDecode(res.body) as List;
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw _httpError(res, "Error al buscar propietarios");
+  }
+
+  static Future<Map<String, dynamic>> obtenerPropietario(int id) async {
+    final url = Uri.parse("$baseUrl/propietarios/$id");
+    final res = await http.get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw _httpError(res, "Error al obtener propietario");
+  }
+
+  static Future<Map<String, dynamic>> crearPropietario({
+    required String nombre,
+    String? telefono,
+    String? cedula,
+    String? email,
+  }) async {
+    final url = Uri.parse("$baseUrl/propietarios");
+    final body = <String, dynamic>{"nombre": nombre.trim()};
+    if (telefono != null && telefono.trim().isNotEmpty) body["telefono"] = telefono.trim();
+    if (cedula != null && cedula.trim().isNotEmpty) body["cedula"] = cedula.trim();
+    if (email != null && email.trim().isNotEmpty) body["email"] = email.trim();
+
+    final res = await http
+        .post(url, headers: _headersAuth(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 201) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw _httpError(res, "No se pudo crear el propietario");
+  }
+
+  static Future<void> actualizarPropietario({
+    required int id,
+    String? nombre,
+    String? telefono,
+    String? cedula,
+    String? email,
+  }) async {
+    final url = Uri.parse("$baseUrl/propietarios/$id");
+    final body = <String, dynamic>{};
+    if (nombre != null) body["nombre"] = nombre.trim();
+    if (telefono != null) body["telefono"] = telefono.trim();
+    if (cedula != null) body["cedula"] = cedula.trim();
+    if (email != null) body["email"] = email.trim();
+
+    final res = await http
+        .put(url, headers: _headersAuth(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw _httpError(res, "No se pudo actualizar el propietario");
+    }
+  }
+
+  /// Reasigna el propietario de un vehículo. Pasa [propietarioId] para uno
+  /// ya existente, o [nombre]/[telefono] para crear uno nuevo (o reutilizar
+  /// uno con el mismo nombre+teléfono) y asignarlo.
+  static Future<Map<String, dynamic>> reasignarPropietario({
+    required String placa,
+    int? propietarioId,
+    String? nombre,
+    String? telefono,
+  }) async {
+    final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/propietario");
+    final body = <String, dynamic>{};
+    if (propietarioId != null) body["propietario_id"] = propietarioId;
+    if (nombre != null && nombre.trim().isNotEmpty) body["nombre"] = nombre.trim();
+    if (telefono != null && telefono.trim().isNotEmpty) body["telefono"] = telefono.trim();
+
+    final res = await http
+        .put(url, headers: _headersAuth(), body: jsonEncode(body))
+        .timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw _httpError(res, "No se pudo reasignar el propietario");
   }
 
   // =========================

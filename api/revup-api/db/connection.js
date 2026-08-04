@@ -150,7 +150,61 @@ export async function ensureSchema() {
     )
   `);
 
+  // Propietarios normalizados (1 propietario -> muchos vehículos).
+  // vehiculos.propietario_nombre/propietario_telefono quedan como columnas
+  // heredadas (no se borran, no hay migraciones formales) pero dejan de
+  // escribirse: la fuente de verdad pasa a ser esta tabla.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS propietarios (
+      id SERIAL PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      telefono TEXT,
+      cedula TEXT,
+      email TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario_id INTEGER REFERENCES propietarios(id)`);
+
   await seedCatalogos();
+  await backfillPropietarios();
+}
+
+// Migra los propietarios que hoy solo existen como texto plano en
+// vehiculos.propietario_nombre/telefono hacia la tabla normalizada,
+// deduplicando por (nombre, teléfono). Idempotente: sólo toca vehículos
+// que todavía no tienen propietario_id asignado.
+async function backfillPropietarios() {
+  const pendientes = await pool.query(
+    `SELECT id, propietario_nombre, propietario_telefono
+     FROM vehiculos
+     WHERE propietario_id IS NULL
+       AND propietario_nombre IS NOT NULL
+       AND trim(propietario_nombre) <> ''`
+  );
+
+  for (const v of pendientes.rows) {
+    const nombre = v.propietario_nombre.trim();
+    const telefono = (v.propietario_telefono || "").trim() || null;
+
+    const existente = await pool.query(
+      `SELECT id FROM propietarios WHERE nombre = $1 AND telefono IS NOT DISTINCT FROM $2 LIMIT 1`,
+      [nombre, telefono]
+    );
+
+    let propietarioId;
+    if (existente.rowCount > 0) {
+      propietarioId = existente.rows[0].id;
+    } else {
+      const ins = await pool.query(
+        `INSERT INTO propietarios (nombre, telefono) VALUES ($1, $2) RETURNING id`,
+        [nombre, telefono]
+      );
+      propietarioId = ins.rows[0].id;
+    }
+
+    await pool.query(`UPDATE vehiculos SET propietario_id = $1 WHERE id = $2`, [propietarioId, v.id]);
+  }
 }
 
 async function seedCatalogos() {

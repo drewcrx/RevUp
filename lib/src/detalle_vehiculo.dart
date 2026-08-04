@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -37,11 +38,20 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   String? _errorOts;
   List<Map<String, dynamic>> _ots = [];
 
+  // Propietario — estado local para reflejar reasignación/edición sin
+  // recargar toda la pantalla.
+  int? _propietarioId;
+  String? _propietarioNombre;
+  String? _propietarioTelefono;
+
   @override
   void initState() {
     super.initState();
     _kmActual     = widget.vehiculo.kilometraje;
     _kmCtrl.text  = _kmActual.toString();
+    _propietarioId = widget.vehiculo.propietarioId;
+    _propietarioNombre = widget.vehiculo.propietarioNombre;
+    _propietarioTelefono = widget.vehiculo.propietarioTelefono;
     _cargarOts();
   }
 
@@ -73,7 +83,11 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       estado == 'PENDIENTE' ? 'EN PROCESO' : estado;
 
   @override
-  void dispose() { _kmCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _propBusquedaDebounce?.cancel();
+    _kmCtrl.dispose();
+    super.dispose();
+  }
 
   String _datoStr(dynamic v, {String fallback = "—"}) {
     final s = (v ?? "").toString().trim();
@@ -105,6 +119,311 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     } finally {
       if (mounted) setState(() => _actualizandoKm = false);
     }
+  }
+
+  Timer? _propBusquedaDebounce;
+
+  // Buscar un propietario existente y reasignar este vehículo a él, o
+  // escribir uno nuevo (nombre + teléfono) para crear/reutilizar y asignar.
+  Future<void> _cambiarPropietario() async {
+    final buscarCtrl = TextEditingController();
+    final nombreCtrl = TextEditingController();
+    final telCtrl = TextEditingController();
+    List<Map<String, dynamic>> resultados = [];
+    bool cargando = true;
+    bool reasignando = false;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setS) {
+          Future<void> buscar(String q) async {
+            setS(() => cargando = true);
+            try {
+              resultados = await ApiService.buscarPropietarios(q);
+            } catch (_) {
+              resultados = [];
+            } finally {
+              if (ctx2.mounted) setS(() => cargando = false);
+            }
+          }
+
+          if (cargando && resultados.isEmpty) buscar("");
+
+          Future<void> asignar({int? id, String? nombre, String? telefono}) async {
+            setS(() => reasignando = true);
+            try {
+              final p = await ApiService.reasignarPropietario(
+                placa: widget.vehiculo.placa,
+                propietarioId: id, nombre: nombre, telefono: telefono);
+              if (!mounted) return;
+              setState(() {
+                _propietarioId = int.tryParse((p['id'] ?? '').toString());
+                _propietarioNombre = p['nombre']?.toString();
+                _propietarioTelefono = p['telefono']?.toString();
+              });
+              Navigator.pop(ctx2);
+              _snack('Propietario actualizado ✅');
+            } catch (e) {
+              setS(() => reasignando = false);
+              _snack('Error: $e', error: true);
+            }
+          }
+
+          return Container(
+            padding: EdgeInsets.only(
+              left: 18, right: 18, top: 18,
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 18),
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx2).size.height * 0.85),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D1420),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.person_search_rounded, color: _kBlue, size: 18),
+                  const SizedBox(width: 8),
+                  const Text("Cambiar propietario", style: TextStyle(
+                    fontFamily: 'Ubuntu', color: _kWhite,
+                    fontWeight: FontWeight.w700, fontSize: 15)),
+                ]),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: buscarCtrl,
+                  style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: "Buscar por nombre o teléfono",
+                    hintStyle: TextStyle(fontFamily: 'Ubuntu',
+                      color: _kWhite.withOpacity(0.25), fontSize: 13),
+                    prefixIcon: Icon(Icons.search_rounded, color: _kBlue.withOpacity(0.7)),
+                    filled: true, fillColor: _kBlue.withOpacity(0.05),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: _kBlue.withOpacity(0.22))),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                  ),
+                  onChanged: (v) {
+                    _propBusquedaDebounce?.cancel();
+                    _propBusquedaDebounce = Timer(
+                      const Duration(milliseconds: 350), () => buscar(v.trim()));
+                  },
+                ),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: cargando
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(child: SizedBox(width: 20, height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue))))
+                      : resultados.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Text("Sin resultados",
+                                style: TextStyle(fontFamily: 'Ubuntu',
+                                  color: _kWhite.withOpacity(0.35), fontSize: 12)))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: resultados.length,
+                              itemBuilder: (_, i) {
+                                final p = resultados[i];
+                                final nombre = (p['nombre'] ?? '').toString();
+                                final tel = (p['telefono'] ?? '').toString();
+                                return ListTile(
+                                  dense: true,
+                                  leading: Icon(Icons.person_rounded,
+                                    color: _kBlue.withOpacity(0.6), size: 18),
+                                  title: Text(nombre, style: const TextStyle(
+                                    fontFamily: 'Ubuntu', color: _kWhite, fontSize: 13)),
+                                  subtitle: tel.isNotEmpty ? Text(tel, style: TextStyle(
+                                    fontFamily: 'Ubuntu',
+                                    color: _kWhite.withOpacity(0.35), fontSize: 11)) : null,
+                                  onTap: reasignando
+                                      ? null
+                                      : () => asignar(id: int.tryParse(p['id'].toString())),
+                                );
+                              },
+                            ),
+                ),
+                Divider(height: 26, color: _kBlue.withOpacity(0.10)),
+                Text("O escribe uno nuevo", style: TextStyle(fontFamily: 'Ubuntu',
+                  color: _kWhite.withOpacity(0.45), fontWeight: FontWeight.w600, fontSize: 12)),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: nombreCtrl,
+                  style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: "Nombre del propietario",
+                    hintStyle: TextStyle(fontFamily: 'Ubuntu',
+                      color: _kWhite.withOpacity(0.25), fontSize: 13),
+                    filled: true, fillColor: _kBlue.withOpacity(0.05),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: _kBlue.withOpacity(0.22))),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: telCtrl,
+                  keyboardType: TextInputType.phone,
+                  style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: "Teléfono (opcional)",
+                    hintStyle: TextStyle(fontFamily: 'Ubuntu',
+                      color: _kWhite.withOpacity(0.25), fontSize: 13),
+                    filled: true, fillColor: _kBlue.withOpacity(0.05),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: _kBlue.withOpacity(0.22))),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity, height: 44,
+                  child: GestureDetector(
+                    onTap: reasignando ? null : () {
+                      final n = nombreCtrl.text.trim();
+                      if (n.isEmpty) { _snack('Escribe un nombre', error: true); return; }
+                      asignar(nombre: n, telefono: telCtrl.text.trim());
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: const LinearGradient(colors: [Color(0xFF2AA0FF), _kBlueDark])),
+                      child: Center(child: reasignando
+                          ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text("ASIGNAR", style: TextStyle(
+                              fontFamily: 'Ubuntu', color: Colors.white,
+                              fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1))),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+    buscarCtrl.dispose();
+    nombreCtrl.dispose();
+    telCtrl.dispose();
+  }
+
+  // Editar los datos del propietario actual — se refleja en todos sus
+  // vehículos porque ahora es un registro normalizado, no texto plano.
+  Future<void> _editarPropietarioActual() async {
+    if (_propietarioId == null) return;
+    final nombreCtrl = TextEditingController(text: _propietarioNombre ?? "");
+    final telCtrl = TextEditingController(text: _propietarioTelefono ?? "");
+    bool guardando = false;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setS) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1420),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _kBlue.withOpacity(0.18))),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text("Editar propietario", style: TextStyle(fontFamily: 'Ubuntu',
+                color: _kWhite, fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 4),
+              Text("Los cambios se aplican a todos sus vehículos.",
+                style: TextStyle(fontFamily: 'Ubuntu',
+                  color: _kWhite.withOpacity(0.35), fontSize: 11)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nombreCtrl,
+                style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: "Nombre",
+                  labelStyle: TextStyle(fontFamily: 'Ubuntu', color: _kBlue.withOpacity(0.8), fontSize: 12),
+                  filled: true, fillColor: _kBlue.withOpacity(0.05),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: _kBlue.withOpacity(0.22))),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: telCtrl,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: "Teléfono",
+                  labelStyle: TextStyle(fontFamily: 'Ubuntu', color: _kBlue.withOpacity(0.8), fontSize: 12),
+                  filled: true, fillColor: _kBlue.withOpacity(0.05),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: _kBlue.withOpacity(0.22))),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity, height: 44,
+                child: GestureDetector(
+                  onTap: guardando ? null : () async {
+                    final n = nombreCtrl.text.trim();
+                    if (n.isEmpty) { _snack('El nombre no puede quedar vacío', error: true); return; }
+                    setS(() => guardando = true);
+                    try {
+                      await ApiService.actualizarPropietario(
+                        id: _propietarioId!, nombre: n, telefono: telCtrl.text.trim());
+                      if (!mounted) return;
+                      setState(() {
+                        _propietarioNombre = n;
+                        _propietarioTelefono = telCtrl.text.trim();
+                      });
+                      Navigator.pop(ctx2);
+                      _snack('Propietario actualizado ✅');
+                    } catch (e) {
+                      setS(() => guardando = false);
+                      _snack('Error: $e', error: true);
+                    }
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      gradient: const LinearGradient(colors: [Color(0xFF2AA0FF), _kBlueDark])),
+                    child: Center(child: guardando
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text("GUARDAR", style: TextStyle(
+                            fontFamily: 'Ubuntu', color: Colors.white,
+                            fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1))),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+    nombreCtrl.dispose();
+    telCtrl.dispose();
   }
 
   double _mm(double v) => v * 2.8346456693;
@@ -631,8 +950,8 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final combustible = _datoStr(widget.vehiculo.tipoCombustible);
     final transmision = _datoStr(widget.vehiculo.transmision);
     final cilindraje  = _datoStr(widget.vehiculo.cilindraje);
-    final propietario = _datoStr(widget.vehiculo.propietarioNombre);
-    final telefono    = _datoStr(widget.vehiculo.propietarioTelefono);
+    final propietario = _datoStr(_propietarioNombre);
+    final telefono    = _datoStr(_propietarioTelefono);
     final nota        = _datoStr(widget.vehiculo.notaIngreso);
     final initial     = widget.vehiculo.marca.isNotEmpty
         ? widget.vehiculo.marca[0].toUpperCase() : "V";
@@ -871,9 +1190,32 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
               // ── Propietario ──────────────────────────────────────────────
               _card(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _secHeader("Propietario", icon: Icons.person_rounded),
+                Row(children: [
+                  Expanded(child: _secHeader("Propietario", icon: Icons.person_rounded)),
+                  if (_propietarioId != null)
+                    IconButton(
+                      icon: Icon(Icons.edit_rounded, color: _kBlue.withOpacity(0.7), size: 18),
+                      tooltip: "Editar datos del propietario",
+                      onPressed: _editarPropietarioActual,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ]),
                 _dato("Nombre",   propietario),
                 _dato("Teléfono", telefono),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity, height: 40,
+                  child: OutlinedButton.icon(
+                    onPressed: _cambiarPropietario,
+                    icon: Icon(Icons.swap_horiz_rounded, color: _kBlue.withOpacity(0.85), size: 16),
+                    label: const Text("Cambiar propietario", style: TextStyle(
+                      fontFamily: 'Ubuntu', color: _kBlue, fontWeight: FontWeight.w700, fontSize: 12)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _kBlue.withOpacity(0.35)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                    ),
+                  ),
+                ),
               ])),
 
               // ── Nota de ingreso (solo si existe) ─────────────────────────

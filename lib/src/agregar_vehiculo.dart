@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'api_service.dart';
 
@@ -47,6 +48,9 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   String? _modeloSeleccionado;
   bool get _marcaEsOtro => _marcaSeleccionada == _kOtro;
   bool get _modeloEsOtro => _modeloSeleccionado == _kOtro;
+
+  // ── Propietario (normalizado — puede elegir uno existente o escribir uno nuevo) ──
+  int? _propietarioIdSeleccionado;
 
   @override
   void initState() {
@@ -123,8 +127,117 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     });
   }
 
+  Timer? _busquedaDebounce;
+
+  Future<void> _buscarPropietarioExistente() async {
+    final buscarCtrl = TextEditingController();
+    List<Map<String, dynamic>> resultados = [];
+    bool cargando = true;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx2, setS) {
+          Future<void> buscar(String q) async {
+            setS(() => cargando = true);
+            try {
+              final r = await ApiService.buscarPropietarios(q);
+              resultados = r;
+            } catch (_) {
+              resultados = [];
+            } finally {
+              if (ctx2.mounted) setS(() => cargando = false);
+            }
+          }
+
+          if (cargando && resultados.isEmpty) {
+            // primera carga (lista inicial sin filtro)
+            buscar("");
+          }
+
+          return Container(
+            padding: EdgeInsets.only(
+              left: 18, right: 18, top: 18,
+              bottom: MediaQuery.of(ctx2).viewInsets.bottom + 18),
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx2).size.height * 0.75),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0D1420),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                const Icon(Icons.person_search_rounded, color: _kBlue, size: 18),
+                const SizedBox(width: 8),
+                const Text("Buscar propietario", style: TextStyle(
+                  fontFamily: 'Ubuntu', color: _kWhite,
+                  fontWeight: FontWeight.w700, fontSize: 15)),
+              ]),
+              const SizedBox(height: 14),
+              TextField(
+                controller: buscarCtrl,
+                autofocus: true,
+                style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                decoration: _dec("Nombre o teléfono", Icons.search_rounded),
+                onChanged: (v) {
+                  _busquedaDebounce?.cancel();
+                  _busquedaDebounce = Timer(const Duration(milliseconds: 350),
+                    () => buscar(v.trim()));
+                },
+              ),
+              const SizedBox(height: 10),
+              Flexible(
+                child: cargando
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: SizedBox(width: 22, height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue))))
+                    : resultados.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Text("Sin resultados — puedes escribir uno nuevo abajo",
+                              style: TextStyle(fontFamily: 'Ubuntu',
+                                color: _kWhite.withOpacity(0.35), fontSize: 12)))
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: resultados.length,
+                            itemBuilder: (_, i) {
+                              final p = resultados[i];
+                              final nombre = (p['nombre'] ?? '').toString();
+                              final tel = (p['telefono'] ?? '').toString();
+                              final nVeh = int.tryParse((p['vehiculos_count'] ?? '0').toString()) ?? 0;
+                              return ListTile(
+                                dense: true,
+                                leading: Icon(Icons.person_rounded, color: _kBlue.withOpacity(0.6), size: 20),
+                                title: Text(nombre, style: const TextStyle(
+                                  fontFamily: 'Ubuntu', color: _kWhite, fontSize: 13)),
+                                subtitle: Text(
+                                  [if (tel.isNotEmpty) tel, "$nVeh vehículo${nVeh == 1 ? '' : 's'}"].join(" · "),
+                                  style: TextStyle(fontFamily: 'Ubuntu',
+                                    color: _kWhite.withOpacity(0.35), fontSize: 11)),
+                                onTap: () {
+                                  setState(() {
+                                    _propietarioIdSeleccionado = int.tryParse(p['id'].toString());
+                                    propietarioController.text = nombre;
+                                    telefonoController.text = tel;
+                                  });
+                                  Navigator.pop(ctx2);
+                                },
+                              );
+                            },
+                          ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+    buscarCtrl.dispose();
+  }
+
   @override
   void dispose() {
+    _busquedaDebounce?.cancel();
     marcaController.dispose();
     modeloController.dispose();
     placaController.dispose();
@@ -171,6 +284,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
       marca: marca, modelo: modelo, placa: placa,
       kilometraje: kilometraje, ultimaVisita: ultimaVisita,
       anio: anio, color: _colorSeleccionado!,
+      propietarioId: _propietarioIdSeleccionado,
       propietarioNombre: propietario, propietarioTelefono: telefono,
       notaIngreso: nota.isEmpty ? null : nota,
       tipoVehiculo: _tipoVehiculoSeleccionado!,
@@ -445,11 +559,45 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
 
               // ── Sección: Propietario ───────────────────────────────────
               _section("Propietario", Icons.person_rounded),
-              _field(propietarioController, "Nombre del propietario",
-                Icons.badge_outlined),
+              GestureDetector(
+                onTap: _buscarPropietarioExistente,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: _kBlue.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _kBlue.withOpacity(0.22)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.person_search_rounded, color: _kBlue.withOpacity(0.85), size: 17),
+                    const SizedBox(width: 8),
+                    Text(_propietarioIdSeleccionado != null
+                        ? "Propietario existente seleccionado"
+                        : "Buscar propietario existente",
+                      style: TextStyle(fontFamily: 'Ubuntu',
+                        color: _propietarioIdSeleccionado != null ? _kBlue : _kWhite.withOpacity(0.55),
+                        fontWeight: FontWeight.w700, fontSize: 12)),
+                    const Spacer(),
+                    if (_propietarioIdSeleccionado != null)
+                      Icon(Icons.check_circle_rounded, color: _kBlue.withOpacity(0.8), size: 16),
+                  ]),
+                ),
+              ),
+              TextField(
+                controller: propietarioController,
+                onChanged: (_) => setState(() => _propietarioIdSeleccionado = null),
+                style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                decoration: _dec("Nombre del propietario", Icons.badge_outlined),
+              ),
               const SizedBox(height: 12),
-              _field(telefonoController, "Teléfono", Icons.phone_rounded,
-                keyboard: TextInputType.phone),
+              TextField(
+                controller: telefonoController,
+                keyboardType: TextInputType.phone,
+                onChanged: (_) => setState(() => _propietarioIdSeleccionado = null),
+                style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
+                decoration: _dec("Teléfono", Icons.phone_rounded),
+              ),
 
               // ── Sección: Notas ─────────────────────────────────────────
               _section("Nota de ingreso", Icons.notes_rounded),
