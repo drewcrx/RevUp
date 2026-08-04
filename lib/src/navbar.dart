@@ -166,6 +166,7 @@ class _NavbarState extends State<Navbar> {
                     _navItem(context, Icons.dashboard_rounded,     "Inicio",         "/inicio"),
                     _navItem(context, Icons.person_rounded,         "Perfil",         "/perfil"),
                     _navItem(context, Icons.directions_car_rounded, "Vehículos",      "/vehiculos"),
+                    _navItem(context, Icons.people_alt_rounded,     "Clientes",       "/propietarios"),
                     _navItem(context, Icons.assignment_rounded,     "Órdenes (OT)",   "/ordenes"),
                     _navItem(context, Icons.bar_chart_rounded,      "Reportes",       "/reportes"),
                   ],

@@ -15,6 +15,7 @@ import 'src/ordenes.dart';
 import 'src/nueva_orden.dart';
 import 'src/detalle_orden.dart';
 import 'src/reportes_page.dart';
+import 'src/propietarios.dart';
 import 'src/session.dart';
 
 Future<void> main() async {
@@ -168,6 +169,7 @@ class MyApp extends StatelessWidget {
         '/ordenes':          (_) => const OrdenesPage(),
         '/nueva_orden':      (_) => const NuevaOrdenPage(),
         '/reportes':         (_) => const ReportesPage(),
+        '/propietarios':     (_) => const PropietariosPage(),
       },
 
       onGenerateRoute: (settings) {
