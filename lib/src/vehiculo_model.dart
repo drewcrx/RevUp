@@ -56,9 +56,13 @@ class Vehiculo {
       modelo: (map['modelo'] ?? '').toString(),
       placa: (map['placa'] ?? '').toString(),
 
+      // Postgres devuelve columnas numeric como string con decimal
+      // (ej. "42000.0"): int.tryParse falla con el punto y siempre da
+      // null -> 0, aunque el valor SÍ esté guardado. double.tryParse sí
+      // acepta el decimal.
       kilometraje: map['kilometraje'] is int
           ? map['kilometraje'] as int
-          : int.tryParse((map['kilometraje'] ?? '0').toString()) ?? 0,
+          : (double.tryParse((map['kilometraje'] ?? '0').toString()))?.round() ?? 0,
 
       ultimaVisita: DateTime.tryParse((map['ultima_visita'] ?? '').toString()),
 
