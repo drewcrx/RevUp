@@ -23,6 +23,14 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   final _km       = TextEditingController();
   bool  loading   = false;
 
+  // El kilometraje ya se pide (y se valida) al registrar el vehículo, así
+  // que aquí solo se refleja ese valor — no tiene sentido volver a
+  // pedírselo al mecánico cada vez que crea una OT para el mismo auto.
+  // Si por algún motivo el vehículo no tiene kilometraje registrado (datos
+  // viejos), se cae a un campo editable como respaldo.
+  int? _kmVehiculo;
+  bool _cargandoKm = false;
+
   List<String> _sintomasCatalogo = [];
 
   bool get _placaBloqueada =>
@@ -65,13 +73,16 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
     _cargarSintomasComunes();
     if (_placaBloqueada) {
       _placa.text = widget.placaInicial!.trim().toUpperCase();
-      // Se precarga el último kilometraje conocido como punto de partida,
-      // pero el mecánico lo corrige al kilometraje real con el que llega
-      // el auto esta vez.
+      _cargandoKm = true;
       ApiService.buscarPorPlaca(_placa.text).then((v) {
-        if (!mounted || v == null || v.kilometraje <= 0) return;
-        setState(() => _km.text = v.kilometraje.toString());
-      }).catchError((_) {});
+        if (!mounted) return;
+        setState(() {
+          _cargandoKm = false;
+          if (v != null && v.kilometraje > 0) _kmVehiculo = v.kilometraje;
+        });
+      }).catchError((_) {
+        if (mounted) setState(() => _cargandoKm = false);
+      });
     }
     // Animación de entrada
     _entryCtr = AnimationController(
@@ -96,7 +107,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   Future<void> _crear() async {
     final placa    = _placa.text.trim().toUpperCase();
     final symptoms = _symptoms.text.trim();
-    final km       = int.tryParse(_km.text.trim());
+    final km       = _kmVehiculo ?? int.tryParse(_km.text.trim());
 
     if (placa.isEmpty || symptoms.isEmpty || km == null || km <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -307,30 +318,80 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
 
                   const SizedBox(height: 22),
 
-                  // ── Campo: kilometraje de ingreso ───────────────────────
-                  _fieldLabel("Kilometraje con el que llega", Icons.speed_rounded),
+                  // ── Kilometraje: se refleja el del vehículo, no se vuelve
+                  // a pedir (ya se capturó y validó al registrarlo). Solo
+                  // cae a un campo editable si el vehículo no tiene uno
+                  // registrado (datos viejos).
+                  _fieldLabel("Kilometraje", Icons.speed_rounded),
                   const SizedBox(height: 8),
-                  TextField(
-                    controller: _km,
-                    keyboardType: TextInputType.number,
-                    style: const TextStyle(fontFamily: 'Ubuntu',
-                      color: _kWhite, fontSize: 14, fontWeight: FontWeight.w700),
-                    decoration: InputDecoration(
-                      hintText: "Ej: 85000",
-                      hintStyle: TextStyle(fontFamily: 'Ubuntu',
-                        color: _kWhite.withOpacity(0.25), fontSize: 13),
-                      prefixIcon: Icon(Icons.speed_rounded,
-                        color: _kBlue.withOpacity(0.75), size: 20),
-                      filled: true, fillColor: _kBlue.withOpacity(0.06),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
-                      enabledBorder: OutlineInputBorder(
+                  if (_cargandoKm)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: _kBlue.withOpacity(0.04),
                         borderRadius: BorderRadius.circular(11),
-                        borderSide: BorderSide(color: _kBlue.withOpacity(0.28))),
-                      focusedBorder: OutlineInputBorder(
+                        border: Border.all(color: _kBlue.withOpacity(0.14))),
+                      child: Row(children: [
+                        SizedBox(width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2, color: _kBlue.withOpacity(0.6))),
+                        const SizedBox(width: 12),
+                        Text("Consultando kilometraje...", style: TextStyle(
+                          fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.35), fontSize: 13)),
+                      ]),
+                    )
+                  else if (_kmVehiculo != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: _kBlue.withOpacity(0.06),
                         borderRadius: BorderRadius.circular(11),
-                        borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                        border: Border.all(color: _kBlue.withOpacity(0.22))),
+                      child: Row(children: [
+                        Icon(Icons.speed_rounded, color: _kBlue.withOpacity(0.75), size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text("${_kmVehiculo!.toString().replaceAllMapped(
+                              RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} km",
+                            style: const TextStyle(fontFamily: 'Ubuntu',
+                              color: _kWhite, fontSize: 15, fontWeight: FontWeight.w800)),
+                          Text("Según el registro del vehículo", style: TextStyle(
+                            fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.32), fontSize: 11)),
+                        ])),
+                      ]),
+                    )
+                  else ...[
+                    TextField(
+                      controller: _km,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Ubuntu',
+                        color: _kWhite, fontSize: 14, fontWeight: FontWeight.w700),
+                      decoration: InputDecoration(
+                        hintText: "Ej: 85000",
+                        hintStyle: TextStyle(fontFamily: 'Ubuntu',
+                          color: _kWhite.withOpacity(0.25), fontSize: 13),
+                        prefixIcon: Icon(Icons.speed_rounded,
+                          color: _kBlue.withOpacity(0.75), size: 20),
+                        filled: true, fillColor: _kBlue.withOpacity(0.06),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(11),
+                          borderSide: BorderSide(color: _kBlue.withOpacity(0.28))),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(11),
+                          borderSide: const BorderSide(color: _kBlue, width: 1.5)),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Icon(Icons.info_outline_rounded, color: _kWhite.withOpacity(0.22), size: 12),
+                      const SizedBox(width: 5),
+                      Expanded(child: Text(
+                        "Este vehículo no tiene kilometraje registrado — ingrésalo aquí",
+                        style: TextStyle(fontFamily: 'Ubuntu',
+                          color: _kWhite.withOpacity(0.25), fontSize: 11))),
+                    ]),
+                  ],
 
                   const SizedBox(height: 22),
 
