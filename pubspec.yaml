@@ -65,6 +65,7 @@ flutter:
     - assets/images/turbo_backfire.png
     - assets/images/RevUp.png
     - assets/images/RevUp2.png
+    - assets/images/RevUp_icon.png
 
   fonts:
     - family: BBH_Sans_Bartle

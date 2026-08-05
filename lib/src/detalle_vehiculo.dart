@@ -438,12 +438,33 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     } catch (_) { return null; }
   }
 
-  Future<ui.Image?> _loadLogoImage() async {
+  // Silueta blanca del ícono de RevUp (solo la forma, sin el degradado
+  // azul) para incrustar en el centro del QR como un sello en negativo:
+  // se dibuja encima de los módulos negros del QR, así que queda "grabado"
+  // en blanco sobre el propio patrón, en vez de verse como un logo a
+  // color pegado encima.
+  Future<ui.Image?> _loadLogoSilhouette() async {
     try {
-      final bytes = await rootBundle.load('assets/images/RevUp.png');
+      final bytes = await rootBundle.load('assets/images/RevUp_icon.png');
       final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
       final frame = await codec.getNextFrame();
-      return frame.image;
+      final image = frame.image;
+
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (byteData == null) return image;
+      final pixels = byteData.buffer.asUint8List();
+      for (int i = 0; i < pixels.length; i += 4) {
+        pixels[i] = 255;     // R
+        pixels[i + 1] = 255; // G
+        pixels[i + 2] = 255; // B
+        // alpha (pixels[i+3]) intacto: conserva la forma del logo.
+      }
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        pixels, image.width, image.height, ui.PixelFormat.rgba8888,
+        (result) => completer.complete(result));
+      return completer.future;
     } catch (_) { return null; }
   }
 
@@ -503,8 +524,10 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       // centro del QR con el logo sin que deje de poder escanearse.
       errorCorrectionLevel: QrErrorCorrectLevel.H,
       embeddedImage: logo,
+      // Solo el ancho: con height 0, qr_flutter escala el logo manteniendo
+      // su proporción real en vez de estirarlo a un cuadrado.
       embeddedImageStyle: logo == null ? null : const QrEmbeddedImageStyle(
-        size: Size(64, 64)),
+        size: Size(72, 0)),
     );
     final ui.Image image = await qrPainter.toImage(350);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -565,7 +588,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final qrData = (widget.vehiculo.qrToken != null && widget.vehiculo.qrToken!.isNotEmpty)
         ? qrUrlParaToken(widget.vehiculo.qrToken!) : widget.vehiculo.placa;
     final font = await _loadProjectFont();
-    final logo = await _loadLogoImage();
+    final logo = await _loadLogoSilhouette();
     if (!mounted) return;
 
     await showModalBottomSheet(
