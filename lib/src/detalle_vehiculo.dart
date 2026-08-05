@@ -44,6 +44,12 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   String? _propietarioNombre;
   String? _propietarioTelefono;
 
+  // Logo con halo para incrustar en el QR en pantalla (mismo tratamiento
+  // que el del sticker impreso). QrImageView necesita un ImageProvider,
+  // así que se precomputa una sola vez a PNG en vez de pasar el ui.Image
+  // directo.
+  Uint8List? _logoHaloPng;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +59,16 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     _propietarioNombre = widget.vehiculo.propietarioNombre;
     _propietarioTelefono = widget.vehiculo.propietarioTelefono;
     _cargarOts();
+    _prepararLogoQr();
+  }
+
+  Future<void> _prepararLogoQr() async {
+    final logo = await _loadLogoSilhouette();
+    if (logo == null) return;
+    final bytes = await logo.toByteData(format: ui.ImageByteFormat.png);
+    logo.dispose();
+    if (!mounted || bytes == null) return;
+    setState(() => _logoHaloPng = bytes.buffer.asUint8List());
   }
 
   Future<void> _cargarOts() async {
@@ -1235,7 +1251,13 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
                   ),
                   child: QrImageView(
                     data: qrData, size: 180,
-                    backgroundColor: Colors.white),
+                    backgroundColor: Colors.white,
+                    errorCorrectionLevel: QrErrorCorrectLevel.H,
+                    embeddedImage: _logoHaloPng == null
+                        ? null : MemoryImage(_logoHaloPng!),
+                    embeddedImageStyle: _logoHaloPng == null
+                        ? null : const QrEmbeddedImageStyle(size: Size(60, 0)),
+                  ),
                 )),
                 const SizedBox(height: 16),
                 // Botón imprimir
