@@ -5,6 +5,7 @@
 import express from "express";
 import { pool } from "../db/connection.js";
 import { FAVICON_LINK_TAG } from "../utils/favicon.js";
+import { LOGO_HEADER_DATA_URI } from "../utils/logo.js";
 import { escapeHtml } from "../utils/html.js";
 
 const router = express.Router();
@@ -54,24 +55,33 @@ function shellPage(bodyHtml, title) {
       font-family:'Helvetica Neue',Arial,sans-serif;background:${kBg};color:${kWhite};
       min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;
     }
-    .card{width:min(480px,100%);background:${kCard};border:1px solid ${kBorder};border-radius:16px;overflow:hidden;}
+    .card{width:min(480px,100%);background:${kCard};border:1px solid ${kBorder};border-radius:16px;overflow:hidden;box-shadow:0 24px 60px -20px rgba(0,0,0,0.6),0 0 0 1px rgba(30,144,255,0.04);}
     .card-header{
-      background:linear-gradient(135deg,#0A1628 0%,#060B18 100%);
-      border-bottom:1px solid rgba(30,144,255,0.20);padding:14px 22px;
-      display:flex;align-items:center;gap:9px;
+      position:relative;overflow:hidden;
+      background:linear-gradient(180deg,#0A1628 0%,#060B18 100%);
+      border-bottom:1px solid rgba(30,144,255,0.20);
+      padding:30px 22px 22px;
+      display:flex;flex-direction:column;align-items:center;gap:10px;
     }
-    .dot{width:8px;height:8px;background:${kBlue};border-radius:50%;flex-shrink:0;}
-    .wordmark{font-size:12px;font-weight:800;letter-spacing:3px;color:${kWhite};}
-    .tagline{font-size:10px;color:rgba(30,144,255,0.60);letter-spacing:1.2px;font-weight:600;margin-left:4px;}
-    .card-body{padding:26px 24px;}
+    .header-glow{
+      position:absolute;top:-70px;left:50%;transform:translateX(-50%);
+      width:240px;height:240px;border-radius:50%;
+      background:radial-gradient(circle,rgba(30,144,255,0.24),transparent 70%);
+      pointer-events:none;
+    }
+    .logo-img{position:relative;height:42px;width:auto;display:block;filter:drop-shadow(0 2px 12px rgba(30,144,255,0.35));}
+    .tagline{position:relative;font-size:10px;color:rgba(30,144,255,0.55);letter-spacing:2.2px;font-weight:700;text-transform:uppercase;}
+    .card-body{padding:28px 24px;}
     .placa{
-      display:inline-block;padding:6px 14px;border-radius:8px;background:rgba(30,144,255,0.12);
-      border:1px solid rgba(30,144,255,0.30);color:${kBlue};font-weight:800;font-size:18px;letter-spacing:1.5px;
+      display:inline-block;padding:7px 16px;border-radius:8px;background:rgba(30,144,255,0.12);
+      border:1px solid rgba(30,144,255,0.30);color:${kBlue};font-weight:800;font-size:19px;letter-spacing:1.8px;
+      box-shadow:0 0 24px -6px rgba(30,144,255,0.45);
     }
     .subtitle{margin-top:10px;font-size:13px;color:rgba(240,244,255,0.45);}
-    .ficha{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px;}
-    .ficha .k{font-size:10px;color:rgba(240,244,255,0.35);text-transform:uppercase;letter-spacing:0.5px;}
-    .ficha .v{font-size:13px;color:${kWhite};font-weight:700;margin-top:2px;}
+    .ficha{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .ficha > div{padding:9px 12px;border-radius:9px;background:rgba(30,144,255,0.05);border:1px solid rgba(30,144,255,0.08);}
+    .ficha .k{font-size:9.5px;color:rgba(240,244,255,0.35);text-transform:uppercase;letter-spacing:0.6px;}
+    .ficha .v{font-size:13px;color:${kWhite};font-weight:700;margin-top:3px;}
     .chips{margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;}
     .chip{padding:6px 12px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.5px;}
     .divider{height:1px;background:linear-gradient(90deg,transparent,rgba(30,144,255,0.14),transparent);margin:20px 0;}
@@ -80,7 +90,7 @@ function shellPage(bodyHtml, title) {
     .row .v{color:${kWhite};font-weight:700;}
     .msg{font-size:14px;color:rgba(240,244,255,0.55);line-height:1.6;}
     .hist-title{margin-top:22px;margin-bottom:10px;font-size:12px;font-weight:800;letter-spacing:0.5px;color:rgba(240,244,255,0.55);}
-    .hist-item{padding:12px;margin-bottom:8px;border-radius:10px;background:rgba(30,144,255,0.04);border:1px solid rgba(30,144,255,0.10);}
+    .hist-item{padding:14px;margin-bottom:10px;border-radius:12px;background:rgba(30,144,255,0.04);border:1px solid rgba(30,144,255,0.10);box-shadow:0 8px 20px -12px rgba(0,0,0,0.5);}
     .hist-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
     .hist-date{font-size:11px;color:rgba(240,244,255,0.35);}
     .hist-sintomas{margin-top:6px;font-size:12px;color:rgba(240,244,255,0.60);line-height:1.4;}
@@ -120,9 +130,9 @@ function shellPage(bodyHtml, title) {
 <body>
   <div class="card">
     <div class="card-header">
-      <div class="dot"></div>
-      <span class="wordmark">REVUP</span>
-      <span class="tagline">MÁS CONTROL. MÁS RENDIMIENTO.</span>
+      <div class="header-glow"></div>
+      <img class="logo-img" src="${LOGO_HEADER_DATA_URI}" alt="RevUp" />
+      <span class="tagline">Más control · Más rendimiento</span>
     </div>
     <div class="card-body">
       ${bodyHtml}
