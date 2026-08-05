@@ -60,17 +60,16 @@ function shellPage(bodyHtml, title) {
       position:relative;overflow:hidden;
       background:linear-gradient(180deg,#0A1628 0%,#060B18 100%);
       border-bottom:1px solid rgba(30,144,255,0.20);
-      padding:30px 22px 22px;
-      display:flex;flex-direction:column;align-items:center;gap:10px;
+      padding:22px 22px 18px;
+      display:flex;flex-direction:column;align-items:center;
     }
     .header-glow{
       position:absolute;top:-70px;left:50%;transform:translateX(-50%);
-      width:240px;height:240px;border-radius:50%;
-      background:radial-gradient(circle,rgba(30,144,255,0.24),transparent 70%);
+      width:260px;height:260px;border-radius:50%;
+      background:radial-gradient(circle,rgba(30,144,255,0.22),transparent 70%);
       pointer-events:none;
     }
-    .logo-img{position:relative;height:42px;width:auto;display:block;filter:drop-shadow(0 2px 12px rgba(30,144,255,0.35));}
-    .tagline{position:relative;font-size:10px;color:rgba(30,144,255,0.55);letter-spacing:2.2px;font-weight:700;text-transform:uppercase;}
+    .logo-img{position:relative;height:108px;width:auto;display:block;filter:drop-shadow(0 2px 14px rgba(30,144,255,0.35));}
     .card-body{padding:28px 24px;}
     .placa{
       display:inline-block;padding:7px 16px;border-radius:8px;background:rgba(30,144,255,0.12);
@@ -131,8 +130,7 @@ function shellPage(bodyHtml, title) {
   <div class="card">
     <div class="card-header">
       <div class="header-glow"></div>
-      <img class="logo-img" src="${LOGO_HEADER_DATA_URI}" alt="RevUp" />
-      <span class="tagline">Más control · Más rendimiento</span>
+      <img class="logo-img" src="${LOGO_HEADER_DATA_URI}" alt="RevUp — Más control. Más rendimiento." />
     </div>
     <div class="card-body">
       ${bodyHtml}
