@@ -340,7 +340,7 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                     final c      = _colorEstado(estado);
                     final tieneDiagnostico = (ot["diagnostico"] ?? "").toString().trim().isNotEmpty;
                     final actCount = int.tryParse((ot["actualizaciones_count"] ?? "0").toString().split('.').first) ?? 0;
-                    final closedAt = DateTime.tryParse((ot["closed_at"] ?? "").toString());
+                    final closedAt = DateTime.tryParse((ot["closed_at"] ?? "").toString())?.toLocal();
 
                     // Cabecera de grupo
                     final idx      = ots.indexOf(ot);

@@ -180,7 +180,7 @@ function renderVehiculo(v, ots) {
     ? ots.map((o) => {
         const oEst  = estadoInfo(o.estado_ui);
         const oPago = pagoInfo(o.pago_estado);
-        const fecha = new Date(o.created_at).toLocaleDateString("es-EC");
+        const fecha = new Date(o.created_at).toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" });
         const km = Number(o.kilometraje_ot || 0) > 0
           ? `${Number(o.kilometraje_ot).toLocaleString("es-EC")} km` : "";
         const sintomas = escapeHtml(o.symptoms || "");
@@ -252,7 +252,7 @@ function renderVehiculo(v, ots) {
           </div>` : "";
 
         const entregadoEl = o.closed_at
-          ? `Entregado el ${new Date(o.closed_at).toLocaleDateString("es-EC")}` : "";
+          ? `Entregado el ${new Date(o.closed_at).toLocaleDateString("es-EC", { timeZone: "America/Guayaquil" })}` : "";
         const atendidoPor = o.mechanic_nombre ? `Atendido por ${escapeHtml(o.mechanic_nombre)}` : "";
 
         const actualizaciones = o.actualizaciones || [];
@@ -261,7 +261,7 @@ function renderVehiculo(v, ots) {
             <div class="act-label">ACTUALIZACIONES DURANTE EL TRABAJO (${actualizaciones.length})</div>
             ${actualizaciones.map((a) => {
               const fechaAct = new Date(a.created_at).toLocaleString("es-EC",
-                { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+                { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Guayaquil" });
               const nota = escapeHtml(a.nota || "");
               const fotosA = a.fotos || [];
               return `

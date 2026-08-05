@@ -48,10 +48,13 @@ class OrdenTrabajo {
       totalServicios: double.tryParse((m['total_servicios'] ?? 0).toString()) ?? 0,
       totalRepuestos: double.tryParse((m['total_repuestos'] ?? 0).toString()) ?? 0,
       total: double.tryParse((m['total'] ?? 0).toString()) ?? 0,
-      createdAt: DateTime.tryParse((m['created_at'] ?? '').toString()) ?? DateTime.now(),
+      // El backend manda las fechas en UTC (con sufijo Z); sin .toLocal()
+      // Dart deja el DateTime marcado como UTC y day/month/hour devuelven
+      // los valores UTC crudos, no la hora real de Ecuador.
+      createdAt: DateTime.tryParse((m['created_at'] ?? '').toString())?.toLocal() ?? DateTime.now(),
       diagnostico: m['diagnostico']?.toString(),
       mechanicNombre: m['mechanic_nombre']?.toString(),
-      closedAt: DateTime.tryParse((m['closed_at'] ?? '').toString()),
+      closedAt: DateTime.tryParse((m['closed_at'] ?? '').toString())?.toLocal(),
       actualizacionesCount: int.tryParse((m['actualizaciones_count'] ?? '0').toString().split('.').first) ?? 0,
     );
   }

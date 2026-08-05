@@ -1099,7 +1099,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     final estado  = (o['estado_ui'] ?? o['estado'] ?? '').toString().toUpperCase();
     final pago    = (o['pago_estado'] ?? '').toString();
     final total   = double.tryParse((o['total'] ?? 0).toString()) ?? 0;
-    final fecha   = DateTime.tryParse((o['created_at'] ?? '').toString());
+    final fecha   = DateTime.tryParse((o['created_at'] ?? '').toString())?.toLocal();
     final km      = int.tryParse((o['kilometraje_ot'] ?? '').toString()) ?? 0;
     final c       = _estadoOtColor(estado);
     final isPend  = pago.toUpperCase().contains("PEND");

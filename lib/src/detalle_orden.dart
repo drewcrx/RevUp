@@ -645,7 +645,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final diagnostico = (ot['diagnostico'] ?? '').toString();
     final mechanicNombre = (ot['mechanic_nombre'] ?? '').toString();
     final closedAtRaw = (ot['closed_at'] ?? '').toString();
-    final closedAt = DateTime.tryParse(closedAtRaw);
+    final closedAt = DateTime.tryParse(closedAtRaw)?.toLocal();
     final total      = ot['total'] ?? 0;
     final kmRaw      = ot['kilometraje_ot'];
     final int? km    = kmRaw is int ? kmRaw : int.tryParse(kmRaw?.toString() ?? "");
@@ -1222,7 +1222,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final actId = int.tryParse((a['id'] ?? '').toString());
     final nota = (a['nota'] ?? '').toString();
     final fechaRaw = (a['created_at'] ?? '').toString();
-    final fecha = DateTime.tryParse(fechaRaw);
+    final fecha = DateTime.tryParse(fechaRaw)?.toLocal();
     final fechaStr = fecha == null ? "" :
       "${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')} · "
       "${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}";

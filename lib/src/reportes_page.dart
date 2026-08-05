@@ -358,7 +358,10 @@ class _ReportesPageState extends State<ReportesPage> {
     final estado   = (r["estado"] ?? "").toString().toUpperCase();
     final total    = _money(r["total"]);
     final pagado   = _money(r["pagado"]);
-    final fecha    = (r["created_at"] ?? "").toString();
+    final fechaDt  = DateTime.tryParse((r["created_at"] ?? "").toString())?.toLocal();
+    final fecha    = fechaDt == null ? "" :
+      "${fechaDt.day.toString().padLeft(2, '0')}/${fechaDt.month.toString().padLeft(2, '0')}/${fechaDt.year} · "
+      "${fechaDt.hour.toString().padLeft(2, '0')}:${fechaDt.minute.toString().padLeft(2, '0')}";
     final isPend   = estado == "PENDIENTE";
     final stColor  = isPend ? Colors.orangeAccent
         : estado == "ENTREGADO" ? Colors.greenAccent
