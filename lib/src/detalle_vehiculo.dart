@@ -438,33 +438,51 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     } catch (_) { return null; }
   }
 
-  // Silueta blanca del ícono de RevUp (solo la forma, sin el degradado
-  // azul) para incrustar en el centro del QR como un sello en negativo:
-  // se dibuja encima de los módulos negros del QR, así que queda "grabado"
-  // en blanco sobre el propio patrón, en vez de verse como un logo a
-  // color pegado encima.
+  // Logo de RevUp en negro, sobre su propio recuadro blanco opaco con
+  // margen — no una silueta transparente que se superpone a los módulos.
+  // Al incrustarlo, el recuadro blanco tapa por completo los módulos del
+  // QR que hubiera debajo, dejando al logo su propio espacio limpio,
+  // como un sello, en vez de verse pegado encima del patrón.
   Future<ui.Image?> _loadLogoSilhouette() async {
     try {
       final bytes = await rootBundle.load('assets/images/RevUp_icon.png');
       final codec = await ui.instantiateImageCodec(bytes.buffer.asUint8List());
       final frame = await codec.getNextFrame();
-      final image = frame.image;
+      final srcImage = frame.image;
 
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (byteData == null) return image;
+      // 1) Convertir la silueta (solo el canal alfa importa) a negro puro.
+      final byteData = await srcImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (byteData == null) return srcImage;
       final pixels = byteData.buffer.asUint8List();
       for (int i = 0; i < pixels.length; i += 4) {
-        pixels[i] = 255;     // R
-        pixels[i + 1] = 255; // G
-        pixels[i + 2] = 255; // B
-        // alpha (pixels[i+3]) intacto: conserva la forma del logo.
+        pixels[i] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0; // negro; alpha intacto
       }
-
-      final completer = Completer<ui.Image>();
+      final blackLogoCompleter = Completer<ui.Image>();
       ui.decodeImageFromPixels(
-        pixels, image.width, image.height, ui.PixelFormat.rgba8888,
-        (result) => completer.complete(result));
-      return completer.future;
+        pixels, srcImage.width, srcImage.height, ui.PixelFormat.rgba8888,
+        (result) => blackLogoCompleter.complete(result));
+      final blackLogo = await blackLogoCompleter.future;
+
+      // 2) Componerlo sobre un lienzo blanco opaco con margen alrededor,
+      // para que tenga su propio espacio y no un fondo transparente que
+      // deje ver los módulos justo al borde de las letras.
+      const pad = 0.22;
+      final logoW = blackLogo.width.toDouble();
+      final logoH = blackLogo.height.toDouble();
+      final canvasW = logoW * (1 + pad * 2);
+      final canvasH = logoH * (1 + pad * 2);
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(Rect.fromLTWH(0, 0, canvasW, canvasH), Paint()..color = Colors.white);
+      canvas.drawImageRect(
+        blackLogo,
+        Rect.fromLTWH(0, 0, logoW, logoH),
+        Rect.fromLTWH(canvasW * pad, canvasH * pad, logoW, logoH),
+        Paint(),
+      );
+      final picture = recorder.endRecording();
+      return await picture.toImage(canvasW.round(), canvasH.round());
     } catch (_) { return null; }
   }
 
@@ -527,7 +545,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       // Solo el ancho: con height 0, qr_flutter escala el logo manteniendo
       // su proporción real en vez de estirarlo a un cuadrado.
       embeddedImageStyle: logo == null ? null : const QrEmbeddedImageStyle(
-        size: Size(72, 0)),
+        size: Size(120, 0)),
     );
     final ui.Image image = await qrPainter.toImage(350);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
