@@ -40,11 +40,9 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
 
   String _money(dynamic v) { if (v == null) return "0.00"; return v.toString(); }
 
-  @override
-  void initState() {
-    super.initState();
-    // Si la sesión no está lista, que el error lo muestre el FutureBuilder
-    // (tarjeta roja ya existente) en vez de tumbar la pantalla completa.
+  // Si la sesión no está lista, que el error lo muestre el FutureBuilder
+  // (tarjeta roja ya existente) en vez de tumbar la pantalla completa.
+  void _cargar() {
     try {
       final myId = _currentUserIdOrThrow();
       if (widget.mechanicId == myId) {
@@ -56,6 +54,12 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
     } catch (e) {
       future = Future.error(e);
     }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _cargar();
   }
   // ═════════════════════════════════════════════════════════════════════════ //
 
@@ -350,9 +354,12 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                       children: [
                         if (showHdr) _grupoHeader(estado, c),
                         GestureDetector(
-                          onTap: idInt == null ? null : () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => DetalleOrdenPage(
-                              ordenId: idInt))),
+                          onTap: idInt == null ? null : () async {
+                            await Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => DetalleOrdenPage(
+                                ordenId: idInt)));
+                            if (mounted) setState(_cargar);
+                          },
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(14),

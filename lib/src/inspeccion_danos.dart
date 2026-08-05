@@ -183,6 +183,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
   void initState() { super.initState(); _cargar(); }
 
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() { loading = true; error = null; });
     try {
       final detalle = await ApiService.obtenerDetalleOrden(widget.ordenId);

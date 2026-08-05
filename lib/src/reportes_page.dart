@@ -50,6 +50,7 @@ class _ReportesPageState extends State<ReportesPage> {
   String _money(dynamic v) { if (v == null) return "0.00"; return v.toString(); }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() { loading = true; error = ''; });
     try {
       final month = _monthCtrl.text.trim();
@@ -60,16 +61,19 @@ class _ReportesPageState extends State<ReportesPage> {
       if (isSuper) {
         final r    = await ApiService.obtenerResumenMensual(month: month);
         final data = await ApiService.obtenerReporteMecanicos(month: month);
+        if (!mounted) return;
         setState(() { resumen = r; rows = data; });
       } else {
         final r   = await ApiService.obtenerMiResumenMensual(month: month);
         final ots = await ApiService.obtenerMisOtsDelMes(month: month);
+        if (!mounted) return;
         setState(() { resumen = r; rows = ots; });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     } finally {
-      setState(() => loading = false);
+      if (mounted) setState(() => loading = false);
     }
   }
 

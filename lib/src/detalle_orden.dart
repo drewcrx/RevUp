@@ -28,11 +28,14 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() { loading = true; error = null; });
     try {
       final res = await ApiService.obtenerDetalleOrden(widget.ordenId);
+      if (!mounted) return;
       setState(() { data = res; loading = false; });
     } catch (e) {
+      if (!mounted) return;
       setState(() { error = e.toString(); loading = false; });
     }
   }

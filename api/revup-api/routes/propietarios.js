@@ -27,21 +27,28 @@ async function tieneRelacion(propietarioId, user) {
 
 // GET /propietarios?q=texto — buscar por nombre o teléfono (para elegir un
 // propietario existente al registrar un vehículo, evitando duplicados).
-// No incluye cédula/email: eso solo se ve en el detalle, y solo si el
-// mecánico ya tiene una relación real con ese propietario.
+// No incluye cédula/email nunca. El teléfono solo viaja en la respuesta si
+// el mecánico ya tiene una relación real con ese propietario (o es
+// superuser) — mismo criterio que el detalle (GET /:id), para que buscar
+// no sea una forma de esquivar esa restricción. La búsqueda en sí sigue
+// pudiendo matchear por teléfono aunque no se muestre en el resultado.
 router.get("/", async (req, res) => {
   const q = String(req.query.q || "").trim();
 
   try {
-    const params = [];
+    const params = [req.user.id, isSuper(req)];
     let where = "";
     if (q) {
       params.push(`%${q}%`);
-      where = `WHERE p.nombre ILIKE $1 OR p.telefono ILIKE $1`;
+      where = `WHERE p.nombre ILIKE $3 OR p.telefono ILIKE $3`;
     }
 
     const result = await pool.query(
-      `SELECT p.id, p.nombre, p.telefono,
+      `SELECT p.id, p.nombre,
+              CASE WHEN $2 OR EXISTS (
+                SELECT 1 FROM vehiculos rel
+                WHERE rel.propietario_id = p.id AND rel.mechanic_id = $1
+              ) THEN p.telefono ELSE NULL END AS telefono,
               COUNT(v.id) AS vehiculos_count
        FROM propietarios p
        LEFT JOIN vehiculos v ON v.propietario_id = p.id

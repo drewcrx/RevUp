@@ -226,9 +226,13 @@ router.get("/mecanicos", requireSuper, async (req, res) => {
         GROUP BY p.orden_id
       ),
       gastos_ot AS (
+        -- Filtrado por el mes del reporte igual que pagos_mes: sin esto,
+        -- un repuesto agregado meses después a una OT abierta en este mes
+        -- se sigue contando aquí, inflando el gasto de un mes que ya cerró.
         SELECT r.orden_id,
                SUM(r.cantidad * r.costo_unitario) AS gasto_repuestos
-        FROM orden_repuestos r
+        FROM orden_repuestos r, rango rg
+        WHERE r.created_at >= rg.inicio AND r.created_at < rg.fin
         GROUP BY r.orden_id
       )
       SELECT
@@ -334,16 +338,26 @@ router.get("/resumen", requireSuper, async (req, res) => {
         SELECT
           $1::date AS inicio,
           (date_trunc('month', $1::date) + interval '1 month')::date AS fin
+      ),
+      ingresos_mes AS (
+        -- Agregado por separado: unir orden_pagos y orden_repuestos
+        -- directamente contra "rango" (una fila) sin llave en común
+        -- produce un producto cartesiano que multiplica cada pago por
+        -- la cantidad de líneas de repuestos del mes (y viceversa).
+        SELECT COALESCE(SUM(p.monto), 0) AS total
+        FROM orden_pagos p, rango r
+        WHERE p.created_at >= r.inicio AND p.created_at < r.fin
+      ),
+      gastos_mes AS (
+        SELECT COALESCE(SUM(r.cantidad * r.costo_unitario), 0) AS total
+        FROM orden_repuestos r, rango ra
+        WHERE r.created_at >= ra.inicio AND r.created_at < ra.fin
       )
       SELECT
-        COALESCE(SUM(p.monto), 0) AS ingresos,
-        COALESCE(SUM(r.cantidad * r.costo_unitario), 0) AS gastos,
-        COALESCE(SUM(p.monto), 0) - COALESCE(SUM(r.cantidad * r.costo_unitario), 0) AS utilidad
-      FROM rango ra
-      LEFT JOIN orden_pagos p
-        ON p.created_at >= ra.inicio AND p.created_at < ra.fin
-      LEFT JOIN orden_repuestos r
-        ON r.created_at >= ra.inicio AND r.created_at < ra.fin;
+        i.total AS ingresos,
+        g.total AS gastos,
+        i.total - g.total AS utilidad
+      FROM ingresos_mes i, gastos_mes g;
       `,
       [start]
     );

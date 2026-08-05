@@ -17,6 +17,36 @@ router.use(requireAuth);
 // =========================
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
 
+// La extensión con la que se guarda el archivo en disco debe salir del
+// mimetype YA VALIDADO por fileFilter, nunca de file.originalname: ese
+// campo lo controla el cliente y no tiene relación con el contenido real
+// ni con el mimetype declarado — permitir que decida la extensión abría
+// la puerta a guardar, p. ej., un archivo con mimetype "image/png" pero
+// originalname "x.svg" o "x.html", que luego express.static serviría con
+// Content-Type de HTML/SVG ejecutable (XSS almacenado).
+const EXT_POR_MIMETYPE = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+};
+function extSeguraDeMimetype(mimetype) {
+  return EXT_POR_MIMETYPE[mimetype] || ".jpg";
+}
+
+// Multer ya escribió los archivos en disco antes de que el handler pueda
+// comprobar si el usuario tiene acceso a la OT/daño/actualización dueña
+// (esa comprobación necesita una consulta async, y multer no espera por
+// eso). Si la comprobación falla, hay que borrar lo que ya se escribió
+// para no dejar archivos huérfanos en la carpeta.
+function borrarArchivosSubidos(files) {
+  for (const file of files || []) {
+    fs.unlink(file.path, () => {}); // best-effort
+  }
+}
+
 const fotosStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
     // multer corre antes de que el handler de la ruta valide nada, así que
@@ -29,7 +59,7 @@ const fotosStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    const ext = extSeguraDeMimetype(file.mimetype);
     cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
@@ -74,7 +104,7 @@ const danoFotosStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    const ext = extSeguraDeMimetype(file.mimetype);
     cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
@@ -121,7 +151,7 @@ const actualizacionFotosStorage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").slice(0, 10) || ".jpg";
+    const ext = extSeguraDeMimetype(file.mimetype);
     cb(null, `${crypto.randomUUID()}${ext}`);
   },
 });
@@ -260,43 +290,50 @@ async function getOtIfAllowed(ordenId, user) {
 // - kilometraje_ot: km actual del vehículo al momento de crear la OT
 // =========================
 router.post("/", async (req, res) => {
+  const { placa, symptoms, kilometraje } = req.body;
+
+  if (!placa || !symptoms) {
+    return res.status(400).json({ error: "Faltan datos (placa, symptoms)" });
+  }
+
+  const mechanicId = Number(req.user?.id);
+  if (!mechanicId) {
+    return res.status(401).json({ error: "Token válido pero sin id de usuario" });
+  }
+
+  const placaUpper = String(placa).toUpperCase();
+
+  // El kilometraje con el que llega el auto se registra aquí, al crear la
+  // OT (que es cuando el auto está físicamente presente) — no se asume
+  // el valor guardado del vehículo, que puede estar desactualizado desde
+  // la última visita. Si viene en el body, además se sincroniza con
+  // vehiculos.kilometraje para que quede al día.
+  const kmIngreso = Number.isFinite(Number(kilometraje)) && Number(kilometraje) > 0
+    ? Number(kilometraje) : null;
+
+  const client = await pool.connect();
   try {
-    const { placa, symptoms, kilometraje } = req.body;
-
-    if (!placa || !symptoms) {
-      return res.status(400).json({ error: "Faltan datos (placa, symptoms)" });
-    }
-
-    const mechanicId = Number(req.user?.id);
-    if (!mechanicId) {
-      return res.status(401).json({ error: "Token válido pero sin id de usuario" });
-    }
-
-    const placaUpper = String(placa).toUpperCase();
-
-    // El kilometraje con el que llega el auto se registra aquí, al crear la
-    // OT (que es cuando el auto está físicamente presente) — no se asume
-    // el valor guardado del vehículo, que puede estar desactualizado desde
-    // la última visita. Si viene en el body, además se sincroniza con
-    // vehiculos.kilometraje para que quede al día.
-    const kmIngreso = Number.isFinite(Number(kilometraje)) && Number(kilometraje) > 0
-      ? Number(kilometraje) : null;
+    await client.query("BEGIN");
 
     let kmOt = kmIngreso;
     if (kmIngreso !== null) {
-      await pool.query(
-        `UPDATE vehiculos SET kilometraje = $1 WHERE placa = $2`,
+      // GREATEST evita que un typo al tipear el km de ingreso (ej. 8000 en
+      // vez de 80000) deje el kilometraje del vehículo por debajo del que
+      // ya tenía registrado; el snapshot de esta OT (kilometraje_ot) sigue
+      // siendo el valor exacto que se ingresó, no el corregido.
+      await client.query(
+        `UPDATE vehiculos SET kilometraje = GREATEST(kilometraje, $1) WHERE placa = $2`,
         [kmIngreso, placaUpper]
       );
     } else {
-      const vk = await pool.query(
+      const vk = await client.query(
         `SELECT kilometraje FROM vehiculos WHERE placa = $1 LIMIT 1`,
         [placaUpper]
       );
       kmOt = vk.rowCount ? Number(vk.rows[0].kilometraje || 0) : null;
     }
 
-    const q = await pool.query(
+    const q = await client.query(
       `
       INSERT INTO ordenes_trabajo (
         placa, mechanic_id, usuario_id, symptoms,
@@ -308,9 +345,13 @@ router.post("/", async (req, res) => {
       [placaUpper, mechanicId, mechanicId, String(symptoms), kmOt]
     );
 
+    await client.query("COMMIT");
     return res.status(201).json(q.rows[0]);
   } catch (e) {
+    await client.query("ROLLBACK");
     return res.status(500).json({ error: "Error creando OT", detalle: e.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -529,7 +570,10 @@ router.post("/:id/fotos", subirFotosMiddleware, async (req, res) => {
 
   try {
     const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
+    if (!ot) {
+      borrarArchivosSubidos(req.files);
+      return res.status(404).json({ error: "OT no encontrada" });
+    }
 
     const files = req.files || [];
     if (files.length === 0) {
@@ -699,7 +743,10 @@ router.post("/danos/:danoId/fotos", subirDanoFotosMiddleware, async (req, res) =
 
   try {
     const dano = await getDanoIfAllowed(danoId, req.user);
-    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
+    if (!dano) {
+      borrarArchivosSubidos(req.files);
+      return res.status(404).json({ error: "Daño no encontrado" });
+    }
 
     const files = req.files || [];
     if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });
@@ -800,7 +847,10 @@ router.post("/actualizaciones/:actId/fotos", subirActualizacionFotosMiddleware, 
 
   try {
     const act = await getActualizacionIfAllowed(actId, req.user);
-    if (!act) return res.status(404).json({ error: "Actualización no encontrada" });
+    if (!act) {
+      borrarArchivosSubidos(req.files);
+      return res.status(404).json({ error: "Actualización no encontrada" });
+    }
 
     const files = req.files || [];
     if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });

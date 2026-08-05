@@ -28,6 +28,7 @@ class _OrdenesVehiculoQrPageState extends State<OrdenesVehiculoQrPage> {
   void initState() { super.initState(); _cargar(); }
 
   Future<void> _cargar() async {
+    if (!mounted) return;
     setState(() { loading = true; error = ''; });
     try {
       final data = await ApiService.obtenerOtsPorQrToken(widget.qrToken);
@@ -213,9 +214,11 @@ class _OrdenesVehiculoQrPageState extends State<OrdenesVehiculoQrPage> {
                       if (showHeader) _grupoHeader(estado, c),
                       GestureDetector(
                         onTap: () async {
-                          final ok = await Navigator.pushNamed(
+                          // DetalleOrdenPage nunca hace pop con `true` — el
+                          // refresco tiene que ser incondicional.
+                          await Navigator.pushNamed(
                             context, '/detalle_orden', arguments: o.id);
-                          if (ok == true) _cargar();
+                          _cargar();
                         },
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 8),

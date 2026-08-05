@@ -38,12 +38,15 @@ class _DetalleVehiculoDesdeQrPageState
   }
 
   Future<void> _loadOts() async {
+    if (!mounted) return;
     setState(() { loading = true; error = ''; ots = []; });
     try {
       final data = await ApiService.obtenerOtsPorQrOTokenOFallback(
           placa: placa, token: token);
+      if (!mounted) return;
       setState(() => ots = data);
     } catch (e) {
+      if (!mounted) return;
       setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => loading = false);
@@ -329,9 +332,12 @@ class _DetalleVehiculoDesdeQrPageState
             if (showHeader) _grupoHeader(estado, c),
             GestureDetector(
               onTap: () async {
-                final ok = await Navigator.pushNamed(
+                // DetalleOrdenPage nunca hace pop con `true` — el refresco
+                // tiene que ser incondicional, si no la lista se queda con
+                // datos viejos tras cerrar/pagar la OT y volver.
+                await Navigator.pushNamed(
                     context, '/detalle_orden', arguments: id);
-                if (ok == true) _loadOts();
+                _loadOts();
               },
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),

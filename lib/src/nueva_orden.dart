@@ -28,18 +28,23 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   bool get _placaBloqueada =>
       widget.placaInicial != null && widget.placaInicial!.trim().isNotEmpty;
 
-  bool _sintomaActivo(String s) => _symptoms.text.contains(s);
+  // Tokeniza por coma en vez de comparar substrings: si un síntoma es
+  // substring de otro (p. ej. "Ruido" dentro de "Ruido al frenar"),
+  // comparar por substring marcaba ambos chips como activos y, al
+  // desactivar uno, `replaceAll` borraba el texto del otro también.
+  List<String> _sintomasTokens() => _symptoms.text
+      .split(',')
+      .map((t) => t.trim())
+      .where((t) => t.isNotEmpty)
+      .toList();
+
+  bool _sintomaActivo(String s) => _sintomasTokens().contains(s);
 
   void _toggleSintoma(String s) {
     setState(() {
-      if (_sintomaActivo(s)) {
-        var t = _symptoms.text.replaceAll(s, '');
-        t = t.replaceAll(RegExp(r',\s*,'), ',').replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '');
-        _symptoms.text = t;
-      } else {
-        final cur = _symptoms.text.trim();
-        _symptoms.text = cur.isEmpty ? s : '$cur, $s';
-      }
+      final tokens = _sintomasTokens();
+      if (!tokens.remove(s)) tokens.add(s);
+      _symptoms.text = tokens.join(', ');
       _symptoms.selection = TextSelection.collapsed(offset: _symptoms.text.length);
     });
   }

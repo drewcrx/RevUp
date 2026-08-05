@@ -308,8 +308,8 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
       cilindraje: cilindraje.isEmpty ? null : cilindraje,
     );
 
-    setState(() => _enviando = false);
     if (!mounted) return;
+    setState(() => _enviando = false);
 
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(

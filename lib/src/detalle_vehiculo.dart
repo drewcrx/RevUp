@@ -429,6 +429,11 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   // vehículos porque ahora es un registro normalizado, no texto plano.
   Future<void> _editarPropietarioActual() async {
     if (_propietarioId == null) return;
+    // Se captura en una variable local no anulable: el diálogo puede
+    // quedar abierto un buen rato, y `_propietarioId` es un campo mutable
+    // que en teoría podría cambiar mientras tanto — así el guard de arriba
+    // sigue siendo válido en el momento de guardar, sin usar `!` a ciegas.
+    final propietarioId = _propietarioId!;
     final nombreCtrl = TextEditingController(text: _propietarioNombre ?? "");
     final telCtrl = TextEditingController(text: _propietarioTelefono ?? "");
     bool guardando = false;
@@ -495,7 +500,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
                     setS(() => guardando = true);
                     try {
                       await ApiService.actualizarPropietario(
-                        id: _propietarioId!, nombre: n, telefono: telCtrl.text.trim());
+                        id: propietarioId, nombre: n, telefono: telCtrl.text.trim());
                       if (!mounted) return;
                       setState(() {
                         _propietarioNombre = n;
@@ -762,7 +767,13 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
         ? qrUrlParaToken(widget.vehiculo.qrToken!) : widget.vehiculo.placa;
     final font = await _loadProjectFont();
     final logo = await _loadLogoSilhouette();
-    if (!mounted) return;
+    if (!mounted) { logo?.dispose(); return; }
+
+    // Cada opción del sheet consume y libera `logo` dentro de
+    // _generateQrPngBytes. Si el usuario cierra el sheet sin elegir
+    // ninguna (swipe/tap afuera), ninguna opción se ejecuta y `logo`
+    // quedaría sin liberar — este flag distingue ambos casos.
+    bool logoConsumido = false;
 
     await showModalBottomSheet(
       context: context,
@@ -794,6 +805,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             title: "Sticker individual (50×80 mm)",
             subtitle: "Ideal para imprimir 1 etiqueta",
             onTap: () async {
+              logoConsumido = true;
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
                   qrData: qrData, pageFormat: _sticker50x80, font: font, logo: logo));
@@ -804,9 +816,10 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             title: "Hoja A4 — 9 stickers por hoja",
             subtitle: "Imprime varias etiquetas para recortar",
             onTap: () async {
+              logoConsumido = true;
               Navigator.pop(context);
               final copias = await _pedirCopiasA4();
-              if (copias == null) return;
+              if (copias == null) { logo?.dispose(); return; }
               await _runPrintJob(() => _printStickersA4(
                   qrData: qrData, copies: copias, font: font, logo: logo));
             },
@@ -816,6 +829,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             title: "Térmica rollo 80 mm",
             subtitle: "Centra el sticker 50×80 en rollo 80 mm",
             onTap: () async {
+              logoConsumido = true;
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
                   qrData: qrData, pageFormat: _thermal80, font: font, logo: logo));
@@ -826,6 +840,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             title: "Térmica rollo 58 mm",
             subtitle: "Centra el sticker 50×80 en rollo 58 mm",
             onTap: () async {
+              logoConsumido = true;
               Navigator.pop(context);
               await _runPrintJob(() => _printSingleSticker(
                   qrData: qrData, pageFormat: _thermal58, font: font, logo: logo));
@@ -834,6 +849,8 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
         ]),
       ),
     );
+
+    if (!logoConsumido) logo?.dispose();
   }
 
   Future<void> _runPrintJob(Future<void> Function() job) async {
