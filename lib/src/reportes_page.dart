@@ -145,7 +145,11 @@ class _ReportesPageState extends State<ReportesPage> {
   Widget _buildOperativoCard() {
     final repuestos = (resumen?['repuestos_top'] as List? ?? []).cast<Map<String, dynamic>>();
     final danos = (resumen?['danos_por_estado'] as List? ?? []).cast<Map<String, dynamic>>();
-    if (repuestos.isEmpty && danos.isEmpty) return const SizedBox.shrink();
+    final actualizacionesMes = int.tryParse((resumen?['actualizaciones_mes'] ?? '0').toString()) ?? 0;
+    final otsConDiagnostico = int.tryParse((resumen?['ots_con_diagnostico'] ?? '0').toString()) ?? 0;
+    final otsTotalMes = int.tryParse((resumen?['ots_total_mes'] ?? '0').toString()) ?? 0;
+    final hayTransparencia = actualizacionesMes > 0 || otsTotalMes > 0;
+    if (repuestos.isEmpty && danos.isEmpty && !hayTransparencia) return const SizedBox.shrink();
 
     return _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _secHeader("Repuestos más usados", icon: Icons.build_circle_rounded),
@@ -191,6 +195,19 @@ class _ReportesPageState extends State<ReportesPage> {
               fontWeight: FontWeight.w700, fontSize: 11)),
           );
         }).toList()),
+      ],
+      if (hayTransparencia) ...[
+        const SizedBox(height: 6),
+        _divider(),
+        _secHeader("Transparencia con el cliente", icon: Icons.visibility_rounded),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: _stat("$actualizacionesMes", "Actualizaciones enviadas", _kBlue)),
+          if (otsTotalMes > 0)
+            Expanded(child: _stat(
+              "${((otsConDiagnostico / otsTotalMes) * 100).round()}%",
+              "OTs con diagnóstico", Colors.greenAccent)),
+        ]),
       ],
     ]));
   }

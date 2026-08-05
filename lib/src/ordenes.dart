@@ -295,6 +295,33 @@ class _OrdenesPageState extends State<OrdenesPage> {
               _inlineKv("Pago", o.pagoEstado,
                 isPend ? Colors.orangeAccent : Colors.greenAccent),
             ]),
+
+            // Indicadores: diagnóstico, actualizaciones, fecha de entrega
+            if (o.tieneDiagnostico || o.actualizacionesCount > 0 || o.closedAt != null) ...[
+              const SizedBox(height: 6),
+              Row(children: [
+                if (o.tieneDiagnostico) ...[
+                  Icon(Icons.fact_check_rounded, color: _kBlue.withOpacity(0.55), size: 12),
+                  const SizedBox(width: 8),
+                ],
+                if (o.actualizacionesCount > 0) ...[
+                  Icon(Icons.update_rounded, color: Colors.orangeAccent.withOpacity(0.70), size: 12),
+                  const SizedBox(width: 3),
+                  Text("${o.actualizacionesCount}", style: TextStyle(
+                    fontFamily: 'Ubuntu', color: Colors.orangeAccent.withOpacity(0.80),
+                    fontWeight: FontWeight.w700, fontSize: 10)),
+                  const SizedBox(width: 8),
+                ],
+                if (o.closedAt != null) ...[
+                  Icon(Icons.event_available_rounded, color: Colors.greenAccent.withOpacity(0.55), size: 12),
+                  const SizedBox(width: 3),
+                  Text(
+                    "${o.closedAt!.day.toString().padLeft(2, '0')}/${o.closedAt!.month.toString().padLeft(2, '0')}",
+                    style: TextStyle(fontFamily: 'Ubuntu',
+                      color: Colors.greenAccent.withOpacity(0.65), fontSize: 10)),
+                ],
+              ]),
+            ],
           ])),
 
           const SizedBox(width: 8),

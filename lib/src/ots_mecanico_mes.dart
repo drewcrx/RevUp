@@ -333,6 +333,9 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                     final total  = _money(ot["total"]);
                     final pagado = _money(ot["pagado"]);
                     final c      = _colorEstado(estado);
+                    final tieneDiagnostico = (ot["diagnostico"] ?? "").toString().trim().isNotEmpty;
+                    final actCount = int.tryParse((ot["actualizaciones_count"] ?? "0").toString().split('.').first) ?? 0;
+                    final closedAt = DateTime.tryParse((ot["closed_at"] ?? "").toString());
 
                     // Cabecera de grupo
                     final idx      = ots.indexOf(ot);
@@ -402,6 +405,34 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                                       color: _kWhite.withOpacity(0.35),
                                       fontSize: 11))),
                                 ]),
+                                if (tieneDiagnostico || actCount > 0 || closedAt != null) ...[
+                                  const SizedBox(height: 5),
+                                  Row(children: [
+                                    if (tieneDiagnostico) ...[
+                                      Icon(Icons.fact_check_rounded,
+                                        color: _kBlue.withOpacity(0.55), size: 12),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    if (actCount > 0) ...[
+                                      Icon(Icons.update_rounded,
+                                        color: Colors.orangeAccent.withOpacity(0.70), size: 12),
+                                      const SizedBox(width: 3),
+                                      Text("$actCount", style: TextStyle(fontFamily: 'Ubuntu',
+                                        color: Colors.orangeAccent.withOpacity(0.80),
+                                        fontWeight: FontWeight.w700, fontSize: 10)),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    if (closedAt != null) ...[
+                                      Icon(Icons.event_available_rounded,
+                                        color: Colors.greenAccent.withOpacity(0.55), size: 12),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        "${closedAt.day.toString().padLeft(2, '0')}/${closedAt.month.toString().padLeft(2, '0')}",
+                                        style: TextStyle(fontFamily: 'Ubuntu',
+                                          color: Colors.greenAccent.withOpacity(0.65), fontSize: 10)),
+                                    ],
+                                  ]),
+                                ],
                               ])),
                               Icon(Icons.chevron_right_rounded,
                                 color: _kBlue.withOpacity(0.30), size: 18),

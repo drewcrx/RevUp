@@ -330,26 +330,34 @@ router.get("/", async (req, res) => {
 
     const sql = `
       SELECT
-        id, placa, mechanic_id, usuario_id, symptoms,
-        estado, pago_estado,
-        total_servicios, total_repuestos, total,
-        kilometraje_ot, -- ✅ NUEVO
-        created_at, closed_at,
+        ot.id, ot.placa, ot.mechanic_id, ot.usuario_id, ot.symptoms,
+        ot.diagnostico, u.nombre AS mechanic_nombre,
+        ot.estado, ot.pago_estado,
+        ot.total_servicios, ot.total_repuestos, ot.total,
+        ot.kilometraje_ot,
+        ot.created_at, ot.closed_at,
+        COALESCE(act.actualizaciones_count, 0) AS actualizaciones_count,
 
-        -- ✅ NUEVO: Estado lógico para UI
+        -- Estado lógico para UI
         CASE
-          WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
-          WHEN estado = 'RECIBIDO'
-               AND (COALESCE(total_servicios,0) > 0
-                    OR COALESCE(total_repuestos,0) > 0
-                    OR COALESCE(total,0) > 0)
+          WHEN ot.estado = 'ENTREGADO' THEN 'ENTREGADO'
+          WHEN ot.estado = 'RECIBIDO'
+               AND (COALESCE(ot.total_servicios,0) > 0
+                    OR COALESCE(ot.total_repuestos,0) > 0
+                    OR COALESCE(ot.total,0) > 0)
             THEN 'PENDIENTE'
-          ELSE estado
+          ELSE ot.estado
         END AS estado_ui
 
-      FROM ordenes_trabajo
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY created_at DESC
+      FROM ordenes_trabajo ot
+      LEFT JOIN usuarios u ON u.id = ot.mechanic_id
+      LEFT JOIN (
+        SELECT orden_id, COUNT(*) AS actualizaciones_count
+        FROM orden_actualizaciones
+        GROUP BY orden_id
+      ) act ON act.orden_id = ot.id
+      ${where.length ? `WHERE ${where.map((w) => `ot.${w}`).join(" AND ")}` : ""}
+      ORDER BY ot.created_at DESC
     `;
 
     const q = await pool.query(sql, params);

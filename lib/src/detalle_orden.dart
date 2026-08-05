@@ -168,7 +168,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
       builder: (ctx) => _Dialog(
         title: "Nueva actualización",
         icon: Icons.update_rounded,
-        content: _dialogField(notaCtrl, "Qué encontraste / hiciste", Icons.notes_rounded, maxLines: 4),
+        content: _dialogField(notaCtrl, "Observaciones (qué encontraste o hiciste)",
+          Icons.notes_rounded, maxLines: 4),
         onCancel: () => Navigator.pop(ctx),
         onConfirm: () async {
           final nota = notaCtrl.text.trim();
@@ -916,7 +917,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       visualDensity: VisualDensity.compact,
                     ),
                   ]),
-                  Text("Sube fotos con una nota cuando encuentres algo mientras trabajas — el cliente lo ve en el QR.",
+                  Text("Sube fotos con una observación cuando encuentres algo mientras trabajas — el cliente lo ve en el QR.",
                     style: TextStyle(fontFamily: 'Ubuntu',
                       color: _kWhite.withOpacity(0.30), fontSize: 11)),
                   if (actualizaciones.isNotEmpty) ...[

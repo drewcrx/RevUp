@@ -69,6 +69,9 @@ class _VehiculosPageState extends State<VehiculosPage> {
   String _getPropietario(Vehiculo v) { try { return ((v as dynamic).propietarioNombre?.toString()  ?? '').trim(); } catch (_) { return ''; } }
   String _getTelefono(Vehiculo v)    { try { return ((v as dynamic).propietarioTelefono?.toString() ?? '').trim(); } catch (_) { return ''; } }
   String _getNotaIngreso(Vehiculo v) { try { return ((v as dynamic).notaIngreso?.toString()  ?? '').trim(); } catch (_) { return ''; } }
+  String _getCombustible(Vehiculo v) { try { return ((v as dynamic).tipoCombustible?.toString() ?? '').trim(); } catch (_) { return ''; } }
+  String _getTransmision(Vehiculo v) { try { return ((v as dynamic).transmision?.toString()     ?? '').trim(); } catch (_) { return ''; } }
+  String _getCilindraje(Vehiculo v)  { try { return ((v as dynamic).cilindraje?.toString()      ?? '').trim(); } catch (_) { return ''; } }
   int? _getAnio(Vehiculo v) {
     try {
       final a = (v as dynamic).anio;
@@ -115,6 +118,7 @@ class _VehiculosPageState extends State<VehiculosPage> {
       res = res.where((v) => [
         v.marca, v.modelo, v.placa, _getColor(v), _getTipo(v),
         _getPropietario(v), _getTelefono(v), _getNotaIngreso(v),
+        _getCombustible(v), _getTransmision(v), _getCilindraje(v),
         (_getAnio(v) ?? "").toString(),
       ].map((e) => _safeLower(e)).any((f) => f.contains(q))).toList();
     }

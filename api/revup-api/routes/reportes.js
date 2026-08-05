@@ -99,12 +99,37 @@ router.get("/mi-resumen", async (req, res) => {
       [mechanicId, start]
     );
 
+    // Transparencia con el cliente: cuántas actualizaciones se publicaron y
+    // qué porcentaje de las OTs del mes quedaron con diagnóstico registrado.
+    const actualizacionesMes = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM orden_actualizaciones oa
+       JOIN ordenes_trabajo ot ON ot.id = oa.orden_id
+       WHERE ot.mechanic_id = $1
+         AND oa.created_at >= $2::date
+         AND oa.created_at < (date_trunc('month', $2::date) + interval '1 month')::date`,
+      [mechanicId, start]
+    );
+
+    const diagnosticoMes = await pool.query(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE diagnostico IS NOT NULL AND trim(diagnostico) <> '') AS con_diagnostico
+       FROM ordenes_trabajo
+       WHERE mechanic_id = $1
+         AND created_at >= $2::date
+         AND created_at < (date_trunc('month', $2::date) + interval '1 month')::date`,
+      [mechanicId, start]
+    );
+
     return res.json({
       ingresos,
       gastos,
       utilidad: ingresos - gastos,
       repuestos_top: repuestosTop.rows,
       danos_por_estado: danosPorEstado.rows,
+      actualizaciones_mes: Number(actualizacionesMes.rows[0]?.cantidad || 0),
+      ots_con_diagnostico: Number(diagnosticoMes.rows[0]?.con_diagnostico || 0),
+      ots_total_mes: Number(diagnosticoMes.rows[0]?.total || 0),
     });
   } catch (e) {
     return res.status(500).json({ error: "Error en mi resumen mensual", detalle: e.message });
@@ -134,6 +159,11 @@ router.get("/mi-mes/ordenes", async (req, res) => {
         SELECT orden_id, SUM(monto) AS pagado
         FROM orden_pagos
         GROUP BY orden_id
+      ),
+      act_ot AS (
+        SELECT orden_id, COUNT(*) AS actualizaciones_count
+        FROM orden_actualizaciones
+        GROUP BY orden_id
       )
       SELECT
         ot.id,
@@ -141,9 +171,13 @@ router.get("/mi-mes/ordenes", async (req, res) => {
         ot.total,
         COALESCE(p.pagado, 0) AS pagado,
         ot.estado,
+        ot.diagnostico,
+        ot.closed_at,
+        COALESCE(a.actualizaciones_count, 0) AS actualizaciones_count,
         ot.created_at
       FROM ordenes_trabajo ot
       LEFT JOIN pagos_ot p ON p.orden_id = ot.id
+      LEFT JOIN act_ot a ON a.orden_id = ot.id
       JOIN rango r
         ON ot.created_at >= r.inicio
        AND ot.created_at < r.fin
@@ -249,6 +283,11 @@ router.get("/mecanicos/:id/ordenes", async (req, res) => {
         SELECT orden_id, SUM(monto) AS pagado
         FROM orden_pagos
         GROUP BY orden_id
+      ),
+      act_ot AS (
+        SELECT orden_id, COUNT(*) AS actualizaciones_count
+        FROM orden_actualizaciones
+        GROUP BY orden_id
       )
       SELECT
         ot.id,
@@ -256,9 +295,13 @@ router.get("/mecanicos/:id/ordenes", async (req, res) => {
         ot.total,
         COALESCE(p.pagado, 0) AS pagado,
         ot.estado,
+        ot.diagnostico,
+        ot.closed_at,
+        COALESCE(a.actualizaciones_count, 0) AS actualizaciones_count,
         ot.created_at
       FROM ordenes_trabajo ot
       LEFT JOIN pagos_ot p ON p.orden_id = ot.id
+      LEFT JOIN act_ot a ON a.orden_id = ot.id
       JOIN rango r
         ON ot.created_at >= r.inicio
        AND ot.created_at < r.fin
@@ -329,10 +372,30 @@ router.get("/resumen", requireSuper, async (req, res) => {
       [start]
     );
 
+    const actualizacionesMes = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM orden_actualizaciones
+       WHERE created_at >= $1::date
+         AND created_at < (date_trunc('month', $1::date) + interval '1 month')::date`,
+      [start]
+    );
+
+    const diagnosticoMes = await pool.query(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE diagnostico IS NOT NULL AND trim(diagnostico) <> '') AS con_diagnostico
+       FROM ordenes_trabajo
+       WHERE created_at >= $1::date
+         AND created_at < (date_trunc('month', $1::date) + interval '1 month')::date`,
+      [start]
+    );
+
     return res.json({
       ...q.rows[0],
       repuestos_top: repuestosTop.rows,
       danos_por_estado: danosPorEstado.rows,
+      actualizaciones_mes: Number(actualizacionesMes.rows[0]?.cantidad || 0),
+      ots_con_diagnostico: Number(diagnosticoMes.rows[0]?.con_diagnostico || 0),
+      ots_total_mes: Number(diagnosticoMes.rows[0]?.total || 0),
     });
   } catch (e) {
     return res.status(500).json({ error: "Error en resumen mensual", detalle: e.message });
