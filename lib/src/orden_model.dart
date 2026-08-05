@@ -37,15 +37,17 @@ class OrdenTrabajo {
 
   factory OrdenTrabajo.fromMap(Map<String, dynamic> m) {
     return OrdenTrabajo(
-      id: int.parse(m['id'].toString()),
+      // tryParse en todo: una sola fila con un campo inesperado (ej. sin
+      // mecanico asignado) no debe tumbar la lista completa de OTs.
+      id: int.tryParse((m['id'] ?? '').toString()) ?? 0,
       placa: (m['placa'] ?? '').toString(),
-      mechanicId: int.parse(m['mechanic_id'].toString()),
+      mechanicId: int.tryParse((m['mechanic_id'] ?? '').toString()) ?? 0,
       symptoms: (m['symptoms'] ?? '').toString(),
       estado: (m['estado'] ?? '').toString(),
       pagoEstado: (m['pago_estado'] ?? '').toString(),
-      totalServicios: double.parse((m['total_servicios'] ?? 0).toString()),
-      totalRepuestos: double.parse((m['total_repuestos'] ?? 0).toString()),
-      total: double.parse((m['total'] ?? 0).toString()),
+      totalServicios: double.tryParse((m['total_servicios'] ?? 0).toString()) ?? 0,
+      totalRepuestos: double.tryParse((m['total_repuestos'] ?? 0).toString()) ?? 0,
+      total: double.tryParse((m['total'] ?? 0).toString()) ?? 0,
       createdAt: DateTime.tryParse((m['created_at'] ?? '').toString()) ?? DateTime.now(),
       diagnostico: m['diagnostico']?.toString(),
       mechanicNombre: m['mechanic_nombre']?.toString(),

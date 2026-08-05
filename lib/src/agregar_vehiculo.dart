@@ -133,6 +133,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     final buscarCtrl = TextEditingController();
     List<Map<String, dynamic>> resultados = [];
     bool cargando = true;
+    bool busquedaIniciada = false;
 
     await showModalBottomSheet(
       context: context,
@@ -152,9 +153,11 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
             }
           }
 
-          if (cargando && resultados.isEmpty) {
-            // primera carga (lista inicial sin filtro)
-            buscar("");
+          // Igual que en detalle_vehiculo.dart: no se puede llamar setState
+          // de forma síncrona mientras la hoja se está construyendo.
+          if (!busquedaIniciada) {
+            busquedaIniciada = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) => buscar(""));
           }
 
           return Container(
@@ -263,6 +266,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
     final nota         = notaController.text.trim();
     final cilindraje   = cilindrajeController.text.trim();
     final anio         = int.tryParse(anioTxt);
+    final kilometrajeNum = int.tryParse(kilometraje);
 
     if (marca.isEmpty || modelo.isEmpty || placa.isEmpty ||
         _tipoVehiculoSeleccionado == null || anio == null ||
@@ -270,6 +274,17 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
         telefono.isEmpty || kilometraje.isEmpty || ultimaVisita.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Completa todos los campos obligatorios',
+          style: TextStyle(fontFamily: 'Ubuntu')),
+        backgroundColor: Colors.red.shade900,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+      return;
+    }
+
+    if (kilometrajeNum == null || kilometrajeNum < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Ingresa un kilometraje válido',
           style: TextStyle(fontFamily: 'Ubuntu')),
         backgroundColor: Colors.red.shade900,
         behavior: SnackBarBehavior.floating,

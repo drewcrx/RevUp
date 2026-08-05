@@ -75,18 +75,32 @@ class _ReportesPageState extends State<ReportesPage> {
 
   void _onTapRow(Map<String, dynamic> r) {
     if (isSuper) {
+      final mechanicId = int.tryParse((r["mechanic_id"] ?? '').toString());
+      if (mechanicId == null) { _avisoFilaInvalida(); return; }
       Navigator.push(context, MaterialPageRoute(
         builder: (_) => OtsMecanicoMesPage(
-          mechanicId: r["mechanic_id"],
+          mechanicId: mechanicId,
           mechanicNombre: r["mechanic_nombre"] ?? "Mecánico",
           month: _monthCtrl.text.trim(),
         ),
       ));
     } else {
+      final ordenId = int.tryParse((r["id"] ?? '').toString());
+      if (ordenId == null) { _avisoFilaInvalida(); return; }
       Navigator.push(context, MaterialPageRoute(
-        builder: (_) => DetalleOrdenPage(ordenId: int.parse(r["id"].toString())),
+        builder: (_) => DetalleOrdenPage(ordenId: ordenId),
       ));
     }
+  }
+
+  void _avisoFilaInvalida() {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('No se pudo abrir: datos incompletos en este registro',
+        style: TextStyle(fontFamily: 'Ubuntu')),
+      backgroundColor: Colors.red.shade900,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
   // ═════════════════════════════════════════════════════════════════════════ //
 

@@ -56,6 +56,16 @@ class _PropietariosPageState extends State<PropietariosPage> {
     _debounce = Timer(const Duration(milliseconds: 350), () => _buscar(v.trim()));
   }
 
+  void _snack(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: const TextStyle(fontFamily: 'Ubuntu')),
+      backgroundColor: error ? Colors.red.shade900 : _kBlueDark,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
+  }
+
   Future<void> _abrirDetalle(int id) async {
     await Navigator.push(context,
       MaterialPageRoute(builder: (_) => DetallePropietarioPage(propietarioId: id)));
@@ -130,6 +140,7 @@ class _PropietariosPageState extends State<PropietariosPage> {
                       _buscar(_searchCtrl.text.trim());
                     } catch (e) {
                       setS(() => guardando = false);
+                      _snack('No se pudo crear: $e', error: true);
                     }
                   },
                   child: Container(

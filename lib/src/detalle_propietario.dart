@@ -189,6 +189,9 @@ class _DetallePropietarioPageState extends State<DetallePropietarioPage> {
     final email = (d?['email'] ?? '').toString();
     final vehiculos = (d?['vehiculos'] as List? ?? []).cast<Map<String, dynamic>>();
     final initial = nombre.isNotEmpty ? nombre[0].toUpperCase() : "?";
+    // El backend solo entrega el detalle completo (y permite editar) si ya
+    // hay un vehículo en común con este mecánico, o es superuser.
+    final relacionado = d?['relacionado'] == true;
 
     return Theme(
       data: ThemeData(fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
@@ -217,7 +220,7 @@ class _DetallePropietarioPageState extends State<DetallePropietarioPage> {
             fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
           centerTitle: true,
           actions: [
-            if (d != null)
+            if (d != null && relacionado)
               IconButton(
                 icon: const Icon(Icons.edit_rounded, color: _kBlue, size: 20),
                 tooltip: "Editar",

@@ -238,8 +238,10 @@ class _OrdenesPageState extends State<OrdenesPage> {
 
     return GestureDetector(
       onTap: () async {
-        final ok = await Navigator.pushNamed(context, '/detalle_orden', arguments: o.id);
-        if (ok == true) _cargar();
+        // Detalle de OT no siempre devuelve `true` al volver, así que se
+        // refresca siempre en vez de depender de ese valor.
+        await Navigator.pushNamed(context, '/detalle_orden', arguments: o.id);
+        _cargar();
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),

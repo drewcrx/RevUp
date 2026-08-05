@@ -19,7 +19,12 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads")
 
 const fotosStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const dir = path.join(UPLOAD_DIR, `ot_${req.params.id}`);
+    // multer corre antes de que el handler de la ruta valide nada, así que
+    // el id se valida aquí también — si no, un id manipulado terminaría
+    // armando una ruta de carpeta con datos no verificados.
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return cb(new Error("id de OT inválido"));
+    const dir = path.join(UPLOAD_DIR, `ot_${id}`);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -33,7 +38,10 @@ const uploadFotos = multer({
   storage: fotosStorage,
   limits: { fileSize: 8 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
+    // SVG se sirve como archivo estático desde /uploads y puede llevar
+    // <script> embebido — no se acepta aunque el mimetype empiece con
+    // "image/".
+    if (!file.mimetype.startsWith("image/") || file.mimetype === "image/svg+xml") {
       return cb(new Error("Solo se permiten imágenes"));
     }
     cb(null, true);
@@ -59,7 +67,9 @@ const TIPOS_DANO_VALIDOS = new Set(["ingreso", "entrega"]);
 
 const danoFotosStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const dir = path.join(UPLOAD_DIR, `dano_${req.params.danoId}`);
+    const danoId = Number(req.params.danoId);
+    if (!Number.isFinite(danoId)) return cb(new Error("id de daño inválido"));
+    const dir = path.join(UPLOAD_DIR, `dano_${danoId}`);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -73,7 +83,10 @@ const uploadDanoFotos = multer({
   storage: danoFotosStorage,
   limits: { fileSize: 8 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
+    // SVG se sirve como archivo estático desde /uploads y puede llevar
+    // <script> embebido — no se acepta aunque el mimetype empiece con
+    // "image/".
+    if (!file.mimetype.startsWith("image/") || file.mimetype === "image/svg+xml") {
       return cb(new Error("Solo se permiten imágenes"));
     }
     cb(null, true);
@@ -101,7 +114,9 @@ async function getDanoIfAllowed(danoId, user) {
 // =========================
 const actualizacionFotosStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    const dir = path.join(UPLOAD_DIR, `actualizacion_${req.params.actId}`);
+    const actId = Number(req.params.actId);
+    if (!Number.isFinite(actId)) return cb(new Error("id de actualización inválido"));
+    const dir = path.join(UPLOAD_DIR, `actualizacion_${actId}`);
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -115,7 +130,10 @@ const uploadActualizacionFotos = multer({
   storage: actualizacionFotosStorage,
   limits: { fileSize: 8 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
+    // SVG se sirve como archivo estático desde /uploads y puede llevar
+    // <script> embebido — no se acepta aunque el mimetype empiece con
+    // "image/".
+    if (!file.mimetype.startsWith("image/") || file.mimetype === "image/svg+xml") {
       return cb(new Error("Solo se permiten imágenes"));
     }
     cb(null, true);
@@ -840,6 +858,11 @@ router.post("/:id/servicios", async (req, res) => {
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (!descripcion) return res.status(400).json({ error: "descripcion es obligatoria" });
 
+  const precioNum = Number(precio ?? 0);
+  if (!Number.isFinite(precioNum) || precioNum < 0) {
+    return res.status(400).json({ error: "precio inválido" });
+  }
+
   try {
     const ot = await getOtIfAllowed(ordenId, req.user);
     if (!ot) return res.status(404).json({ error: "OT no encontrada" });
@@ -848,7 +871,7 @@ router.post("/:id/servicios", async (req, res) => {
       `INSERT INTO orden_servicios (orden_id, descripcion, precio)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [ordenId, String(descripcion).trim(), Number(precio || 0)]
+      [ordenId, String(descripcion).trim(), precioNum]
     );
 
     await recalcularTotales(ordenId);
@@ -872,6 +895,19 @@ router.post("/:id/repuestos", async (req, res) => {
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (!nombre) return res.status(400).json({ error: "nombre es obligatorio" });
 
+  const cantidadNum = Number(cantidad ?? 1);
+  const costoNum = Number(costoUnitario ?? 0);
+  const precioNum = Number(precioUnitario ?? 0);
+  if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+    return res.status(400).json({ error: "cantidad inválida" });
+  }
+  if (!Number.isFinite(costoNum) || costoNum < 0) {
+    return res.status(400).json({ error: "costo unitario inválido" });
+  }
+  if (!Number.isFinite(precioNum) || precioNum < 0) {
+    return res.status(400).json({ error: "precio unitario inválido" });
+  }
+
   try {
     const ot = await getOtIfAllowed(ordenId, req.user);
     if (!ot) return res.status(404).json({ error: "OT no encontrada" });
@@ -880,13 +916,7 @@ router.post("/:id/repuestos", async (req, res) => {
       `INSERT INTO orden_repuestos (orden_id, nombre, cantidad, costo_unitario, precio_unitario)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [
-        ordenId,
-        String(nombre).trim(),
-        Number(cantidad || 1),
-        Number(costoUnitario || 0),
-        Number(precioUnitario || 0),
-      ]
+      [ordenId, String(nombre).trim(), cantidadNum, costoNum, precioNum]
     );
 
     await recalcularTotales(ordenId);
@@ -910,6 +940,11 @@ router.post("/:id/pagos", async (req, res) => {
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (monto == null) return res.status(400).json({ error: "monto es obligatorio" });
 
+  const montoNum = Number(monto);
+  if (!Number.isFinite(montoNum) || montoNum <= 0) {
+    return res.status(400).json({ error: "monto inválido" });
+  }
+
   try {
     const ot = await getOtIfAllowed(ordenId, req.user);
     if (!ot) return res.status(404).json({ error: "OT no encontrada" });
@@ -918,7 +953,7 @@ router.post("/:id/pagos", async (req, res) => {
       `INSERT INTO orden_pagos (orden_id, monto, metodo)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [ordenId, Number(monto), String(metodo || "EFECTIVO")]
+      [ordenId, montoNum, String(metodo || "EFECTIVO")]
     );
 
     await recalcularPagoEstado(ordenId);

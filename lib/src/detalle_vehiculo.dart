@@ -61,11 +61,32 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       final data = await ApiService.obtenerOtsDelVehiculo(widget.vehiculo.placa);
       if (!mounted) return;
       setState(() => _ots = data);
+      await _refrescarKilometraje();
     } catch (e) {
       if (!mounted) return;
       setState(() => _errorOts = e.toString());
     } finally {
       if (mounted) setState(() => _loadingOts = false);
+    }
+  }
+
+  // El kilometraje puede haber cambiado fuera de esta pantalla (por
+  // ejemplo, al crear una OT nueva desde Vehículos u Órdenes, que ahora
+  // sincroniza vehiculos.kilometraje) — se refresca junto con el
+  // historial en vez de quedarse con la foto fija que llegó por
+  // navegación al abrir la pantalla.
+  Future<void> _refrescarKilometraje() async {
+    try {
+      final fresco = await ApiService.buscarPorPlaca(widget.vehiculo.placa);
+      if (!mounted || fresco == null) return;
+      if (fresco.kilometraje != _kmActual) {
+        setState(() {
+          _kmActual = fresco.kilometraje;
+          _kmCtrl.text = _kmActual.toString();
+        });
+      }
+    } catch (_) {
+      // Silencioso: si falla, se sigue mostrando el último valor conocido.
     }
   }
 
@@ -101,6 +122,65 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       _snack('Ingresa un kilometraje válido', error: true);
       return;
     }
+    // Un kilometraje menor al actual casi siempre es un error de tipeo
+    // (ej. faltó un dígito) — se confirma antes de guardar en vez de
+    // aceptarlo en silencio.
+    if (nuevoKm < _kmActual) {
+      final confirmar = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1420),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.orangeAccent.withOpacity(0.30))),
+            child: Column(mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 20),
+                SizedBox(width: 8),
+                Text("Kilometraje menor al actual", style: TextStyle(fontFamily: 'Ubuntu',
+                  color: _kWhite, fontWeight: FontWeight.w700, fontSize: 15)),
+              ]),
+              const SizedBox(height: 10),
+              Text("El kilometraje actual es $_kmActual km y estás por guardar $nuevoKm km. ¿Confirmas?",
+                style: TextStyle(fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.60),
+                  fontSize: 13, height: 1.4)),
+              const SizedBox(height: 18),
+              Row(children: [
+                Expanded(child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx, false),
+                  child: Container(height: 42,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _kBlue.withOpacity(0.25))),
+                    child: Center(child: Text("Cancelar", style: TextStyle(
+                      fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.5),
+                      fontWeight: FontWeight.w600, fontSize: 13))),
+                  ),
+                )),
+                const SizedBox(width: 10),
+                Expanded(child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx, true),
+                  child: Container(height: 42,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: Colors.orangeAccent.withOpacity(0.15),
+                      border: Border.all(color: Colors.orangeAccent.withOpacity(0.5))),
+                    child: const Center(child: Text("Sí, confirmar", style: TextStyle(
+                      fontFamily: 'Ubuntu', color: Colors.orangeAccent,
+                      fontWeight: FontWeight.w700, fontSize: 13))),
+                  ),
+                )),
+              ]),
+            ]),
+          ),
+        ),
+      );
+      if (confirmar != true) return;
+    }
     setState(() => _actualizandoKm = true);
     try {
       final ultima = widget.vehiculo.ultimaVisita?.toIso8601String() ?? "";
@@ -132,6 +212,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     List<Map<String, dynamic>> resultados = [];
     bool cargando = true;
     bool reasignando = false;
+    bool busquedaIniciada = false;
 
     await showModalBottomSheet(
       context: context,
@@ -150,7 +231,14 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
             }
           }
 
-          if (cargando && resultados.isEmpty) buscar("");
+          // La búsqueda inicial no puede disparar setState de forma
+          // síncrona mientras esta hoja todavía se está construyendo
+          // (Flutter lo marca como error) — se agenda para después del
+          // frame actual, y solo la primera vez.
+          if (!busquedaIniciada) {
+            busquedaIniciada = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) => buscar(""));
+          }
 
           Future<void> asignar({int? id, String? nombre, String? telefono}) async {
             setS(() => reasignando = true);
@@ -457,9 +545,12 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       for (int i = 0; i < pixels.length; i += 4) {
         pixels[i] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0; // negro; alpha intacto
       }
+      final srcW = srcImage.width, srcH = srcImage.height;
+      srcImage.dispose(); // ya se extrajeron los píxeles, no hace falta más
+
       final blackLogoCompleter = Completer<ui.Image>();
       ui.decodeImageFromPixels(
-        pixels, srcImage.width, srcImage.height, ui.PixelFormat.rgba8888,
+        pixels, srcW, srcH, ui.PixelFormat.rgba8888,
         (result) => blackLogoCompleter.complete(result));
       final blackLogo = await blackLogoCompleter.future;
 
@@ -481,8 +572,12 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
         Rect.fromLTWH(canvasW * pad, canvasH * pad, logoW, logoH),
         Paint(),
       );
+      blackLogo.dispose(); // ya quedó pintado en el lienzo, no se necesita más
+
       final picture = recorder.endRecording();
-      return await picture.toImage(canvasW.round(), canvasH.round());
+      final result = await picture.toImage(canvasW.round(), canvasH.round());
+      picture.dispose();
+      return result;
     } catch (_) { return null; }
   }
 
@@ -549,6 +644,8 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
     );
     final ui.Image image = await qrPainter.toImage(350);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    logo?.dispose(); // ya se dibujó dentro del QR renderizado, no se necesita más
     return byteData!.buffer.asUint8List();
   }
 
@@ -934,9 +1031,12 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
 
     return GestureDetector(
       onTap: () async {
-        final ok = await Navigator.push(context,
+        // DetalleOrdenPage no siempre devuelve `true` al volver (cerrar OT,
+        // agregar pago, editar diagnóstico, etc. no lo hacen), así que se
+        // refresca siempre en vez de depender de ese valor de retorno.
+        await Navigator.push(context,
           MaterialPageRoute(builder: (_) => DetalleOrdenPage(ordenId: id)));
-        if (ok == true) _cargarOts();
+        _cargarOts();
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),

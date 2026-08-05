@@ -13,7 +13,22 @@ function isSuper(req) {
   return req.user?.role === "superuser";
 }
 
-// GET /propietarios?q=texto — buscar por nombre, teléfono o cédula
+// ¿Este mecánico ya atendió algún vehículo de este propietario? Se usa
+// para decidir si puede ver/editar sus datos de contacto completos, o
+// solo lo mínimo para no crear un registro duplicado.
+async function tieneRelacion(propietarioId, user) {
+  if (isSuper({ user })) return true;
+  const q = await pool.query(
+    `SELECT 1 FROM vehiculos WHERE propietario_id = $1 AND mechanic_id = $2 LIMIT 1`,
+    [propietarioId, user.id]
+  );
+  return q.rowCount > 0;
+}
+
+// GET /propietarios?q=texto — buscar por nombre o teléfono (para elegir un
+// propietario existente al registrar un vehículo, evitando duplicados).
+// No incluye cédula/email: eso solo se ve en el detalle, y solo si el
+// mecánico ya tiene una relación real con ese propietario.
 router.get("/", async (req, res) => {
   const q = String(req.query.q || "").trim();
 
@@ -22,11 +37,11 @@ router.get("/", async (req, res) => {
     let where = "";
     if (q) {
       params.push(`%${q}%`);
-      where = `WHERE p.nombre ILIKE $1 OR p.telefono ILIKE $1 OR p.cedula ILIKE $1`;
+      where = `WHERE p.nombre ILIKE $1 OR p.telefono ILIKE $1`;
     }
 
     const result = await pool.query(
-      `SELECT p.id, p.nombre, p.telefono, p.cedula, p.email,
+      `SELECT p.id, p.nombre, p.telefono,
               COUNT(v.id) AS vehiculos_count
        FROM propietarios p
        LEFT JOIN vehiculos v ON v.propietario_id = p.id
@@ -42,7 +57,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /propietarios/:id — detalle + vehículos asociados
+// GET /propietarios/:id — detalle + vehículos asociados. El detalle
+// completo (teléfono/cédula/email) solo se entrega si el mecánico ya
+// atendió un vehículo de este propietario, o es superuser.
 router.get("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return res.status(400).json({ error: "id inválido" });
@@ -70,7 +87,15 @@ router.get("/:id", async (req, res) => {
       vParams
     );
 
-    res.json({ ...p.rows[0], vehiculos: vehiculos.rows });
+    const relacionado = isSuper(req) || vehiculos.rowCount > 0;
+    const propietario = { ...p.rows[0] };
+    if (!relacionado) {
+      propietario.telefono = null;
+      propietario.cedula = null;
+      propietario.email = null;
+    }
+
+    res.json({ ...propietario, vehiculos: vehiculos.rows, relacionado });
   } catch (error) {
     res.status(500).json({ error: "Error al obtener propietario", detalle: error.message });
   }
@@ -124,8 +149,12 @@ router.put("/:id", async (req, res) => {
 
   if (sets.length === 0) return res.status(400).json({ error: "No hay campos para actualizar" });
 
-  params.push(id);
   try {
+    if (!(await tieneRelacion(id, req.user))) {
+      return res.status(403).json({ error: "No puedes editar un propietario con el que no tienes vehículos en común" });
+    }
+
+    params.push(id);
     const q = await pool.query(
       `UPDATE propietarios SET ${sets.join(", ")} WHERE id = $${idx} RETURNING id, nombre, telefono, cedula, email`,
       params

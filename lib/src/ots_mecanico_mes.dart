@@ -328,6 +328,7 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                   // ── Cards de OTs ─────────────────────────────────────────
                   ...ots.map((ot) {
                     final id     = ot["id"]?.toString() ?? "—";
+                    final idInt  = int.tryParse((ot["id"] ?? '').toString());
                     final placa  = (ot["placa"] ?? "").toString();
                     final estado = (ot["estado"] ?? "").toString().toUpperCase();
                     final total  = _money(ot["total"]);
@@ -349,9 +350,9 @@ class _OtsMecanicoMesPageState extends State<OtsMecanicoMesPage> {
                       children: [
                         if (showHdr) _grupoHeader(estado, c),
                         GestureDetector(
-                          onTap: () => Navigator.push(context,
+                          onTap: idInt == null ? null : () => Navigator.push(context,
                             MaterialPageRoute(builder: (_) => DetalleOrdenPage(
-                              ordenId: int.parse(ot["id"].toString())))),
+                              ordenId: idInt))),
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(14),
