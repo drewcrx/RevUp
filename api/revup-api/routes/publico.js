@@ -154,6 +154,7 @@ function renderVehiculo(v, ots) {
   const detalles = escapeHtml([v.anio, v.color].filter(Boolean).join(" · "));
 
   const fichaCampos = [
+    ["Propietario", v.propietario_nombre],
     ["Kilometraje", Number(v.kilometraje || 0) > 0 ? `${Number(v.kilometraje).toLocaleString("es-EC")} km` : null],
     ["Tipo", v.tipo_vehiculo],
     ["Combustible", v.tipo_combustible],
@@ -244,6 +245,7 @@ function renderVehiculo(v, ots) {
 
         const entregadoEl = o.closed_at
           ? `Entregado el ${new Date(o.closed_at).toLocaleDateString("es-EC")}` : "";
+        const atendidoPor = o.mechanic_nombre ? `Atendido por ${escapeHtml(o.mechanic_nombre)}` : "";
 
         const actualizaciones = o.actualizaciones || [];
         const actualizacionesHtml = actualizaciones.length ? `
@@ -273,7 +275,8 @@ function renderVehiculo(v, ots) {
               <span class="hist-date">${fecha}${km ? " · " + km : ""}</span>
             </div>
             ${sintomas ? `<div class="hist-sintomas">${sintomas}</div>` : ""}
-            ${entregadoEl ? `<div class="hist-date" style="margin-top:4px;">${entregadoEl}</div>` : ""}
+            ${atendidoPor ? `<div class="hist-date" style="margin-top:4px;">${atendidoPor}</div>` : ""}
+            ${entregadoEl ? `<div class="hist-date" style="margin-top:2px;">${entregadoEl}</div>` : ""}
             <div class="hist-bottom">
               <span class="chip" style="background:${oPago.color}22;color:${oPago.color};border:1px solid ${oPago.color}55;">${oPago.label}</span>
               <span class="hist-total">$${Number(o.total || 0).toFixed(2)}</span>
@@ -315,9 +318,11 @@ router.get("/:token", async (req, res) => {
   try {
     const vq = await pool.query(
       `SELECT v.placa, v.marca, v.modelo, v.anio, v.color, v.kilometraje,
-              v.tipo_vehiculo, v.tipo_combustible, v.transmision, v.cilindraje
+              v.tipo_vehiculo, v.tipo_combustible, v.transmision, v.cilindraje,
+              p.nombre AS propietario_nombre
        FROM vehiculos v
        JOIN vehiculo_qr q ON q.vehiculo_id = v.id
+       LEFT JOIN propietarios p ON p.id = v.propietario_id
        WHERE q.qr_token = $1 AND q.activo = true
        LIMIT 1`,
       [token]
@@ -331,20 +336,21 @@ router.get("/:token", async (req, res) => {
 
     const otq = await pool.query(
       `SELECT
-         id, symptoms, diagnostico, estado, pago_estado, total, kilometraje_ot,
-         created_at, closed_at,
+         ot.id, ot.symptoms, ot.diagnostico, ot.estado, ot.pago_estado, ot.total,
+         ot.kilometraje_ot, ot.created_at, ot.closed_at, u.nombre AS mechanic_nombre,
          CASE
-           WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
-           WHEN estado = 'RECIBIDO'
-                AND (COALESCE(total_servicios,0) > 0
-                     OR COALESCE(total_repuestos,0) > 0
-                     OR COALESCE(total,0) > 0)
+           WHEN ot.estado = 'ENTREGADO' THEN 'ENTREGADO'
+           WHEN ot.estado = 'RECIBIDO'
+                AND (COALESCE(ot.total_servicios,0) > 0
+                     OR COALESCE(ot.total_repuestos,0) > 0
+                     OR COALESCE(ot.total,0) > 0)
              THEN 'PENDIENTE'
-           ELSE estado
+           ELSE ot.estado
          END AS estado_ui
-       FROM ordenes_trabajo
-       WHERE placa = $1
-       ORDER BY created_at DESC
+       FROM ordenes_trabajo ot
+       LEFT JOIN usuarios u ON u.id = ot.mechanic_id
+       WHERE ot.placa = $1
+       ORDER BY ot.created_at DESC
        LIMIT 25`,
       [v.placa]
     );
