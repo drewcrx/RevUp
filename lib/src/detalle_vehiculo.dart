@@ -531,6 +531,53 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
   // Al incrustarlo, el recuadro blanco tapa por completo los módulos del
   // QR que hubiera debajo, dejando al logo su propio espacio limpio,
   // como un sello, en vez de verse pegado encima del patrón.
+  // Dilatación 1D (Chebyshev) de una máscara booleana fila por fila: marca
+  // como "true" todo píxel a <= r columnas de distancia de un píxel true.
+  static List<bool> _dilateRows(List<bool> mask, int w, int h, int r) {
+    final out = List<bool>.filled(w * h, false);
+    for (int y = 0; y < h; y++) {
+      final base = y * w;
+      int lastTrue = -r - 1;
+      for (int x = 0; x < w; x++) {
+        if (mask[base + x]) lastTrue = x;
+        if (x - lastTrue <= r) out[base + x] = true;
+      }
+      lastTrue = w + r + 1;
+      for (int x = w - 1; x >= 0; x--) {
+        if (mask[base + x]) lastTrue = x;
+        if (lastTrue - x <= r) out[base + x] = true;
+      }
+    }
+    return out;
+  }
+
+  // Igual que _dilateRows pero por columnas. Aplicar filas y luego columnas
+  // equivale a una dilatación cuadrada 2D de radio r (separable).
+  static List<bool> _dilateCols(List<bool> mask, int w, int h, int r) {
+    final out = List<bool>.filled(w * h, false);
+    for (int x = 0; x < w; x++) {
+      int lastTrue = -r - 1;
+      for (int y = 0; y < h; y++) {
+        final idx = y * w + x;
+        if (mask[idx]) lastTrue = y;
+        if (y - lastTrue <= r) out[idx] = true;
+      }
+      lastTrue = h + r + 1;
+      for (int y = h - 1; y >= 0; y--) {
+        final idx = y * w + x;
+        if (mask[idx]) lastTrue = y;
+        if (lastTrue - y <= r) out[idx] = true;
+      }
+    }
+    return out;
+  }
+
+  // Genera el logo listo para incrustar en el QR: en vez de ponerlo sobre
+  // un rectángulo blanco (que se ve como una caja pegada encima del
+  // patrón), se le da un halo blanco delgado que sigue el contorno real
+  // del ícono; fuera de ese halo la imagen queda totalmente transparente,
+  // así los módulos del QR se asoman justo hasta el borde del logo, como
+  // si estuviera incrustado en el propio patrón.
   Future<ui.Image?> _loadLogoSilhouette() async {
     try {
       final bytes = await rootBundle.load('assets/images/RevUp_icon.png');
@@ -538,46 +585,41 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       final frame = await codec.getNextFrame();
       final srcImage = frame.image;
 
-      // 1) Convertir la silueta (solo el canal alfa importa) a negro puro.
       final byteData = await srcImage.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (byteData == null) return srcImage;
-      final pixels = byteData.buffer.asUint8List();
-      for (int i = 0; i < pixels.length; i += 4) {
-        pixels[i] = 0; pixels[i + 1] = 0; pixels[i + 2] = 0; // negro; alpha intacto
+      if (byteData == null) { srcImage.dispose(); return null; }
+      final srcPixels = byteData.buffer.asUint8List();
+      final w = srcImage.width, h = srcImage.height;
+      srcImage.dispose();
+
+      final alpha = Uint8List(w * h);
+      final presence = List<bool>.filled(w * h, false);
+      for (int i = 0; i < w * h; i++) {
+        final a = srcPixels[i * 4 + 3];
+        alpha[i] = a;
+        presence[i] = a > 10;
       }
-      final srcW = srcImage.width, srcH = srcImage.height;
-      srcImage.dispose(); // ya se extrajeron los píxeles, no hace falta más
 
-      final blackLogoCompleter = Completer<ui.Image>();
+      // Radio del halo en píxeles nativos del ícono (~500x745): un margen
+      // delgado y parejo alrededor de la tinta, no un cuadrado grande.
+      const radius = 22;
+      final horiz = _dilateRows(presence, w, h, radius);
+      final dilated = _dilateCols(horiz, w, h, radius);
+
+      final out = Uint8List(w * h * 4);
+      for (int i = 0; i < w * h; i++) {
+        final o = i * 4;
+        if (dilated[i]) {
+          final v = 255 - alpha[i]; // blanco puro fuera del trazo, se funde a negro en el trazo
+          out[o] = v; out[o + 1] = v; out[o + 2] = v; out[o + 3] = 255;
+        }
+        // fuera del halo queda (0,0,0,0): totalmente transparente
+      }
+
+      final completer = Completer<ui.Image>();
       ui.decodeImageFromPixels(
-        pixels, srcW, srcH, ui.PixelFormat.rgba8888,
-        (result) => blackLogoCompleter.complete(result));
-      final blackLogo = await blackLogoCompleter.future;
-
-      // 2) Componerlo sobre un lienzo blanco opaco con margen alrededor,
-      // para que tenga su propio espacio y no un fondo transparente que
-      // deje ver los módulos justo al borde de las letras.
-      const pad = 0.22;
-      final logoW = blackLogo.width.toDouble();
-      final logoH = blackLogo.height.toDouble();
-      final canvasW = logoW * (1 + pad * 2);
-      final canvasH = logoH * (1 + pad * 2);
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      canvas.drawRect(Rect.fromLTWH(0, 0, canvasW, canvasH), Paint()..color = Colors.white);
-      canvas.drawImageRect(
-        blackLogo,
-        Rect.fromLTWH(0, 0, logoW, logoH),
-        Rect.fromLTWH(canvasW * pad, canvasH * pad, logoW, logoH),
-        Paint(),
-      );
-      blackLogo.dispose(); // ya quedó pintado en el lienzo, no se necesita más
-
-      final picture = recorder.endRecording();
-      final result = await picture.toImage(canvasW.round(), canvasH.round());
-      picture.dispose();
-      return result;
+        out, w, h, ui.PixelFormat.rgba8888,
+        (result) => completer.complete(result));
+      return await completer.future;
     } catch (_) { return null; }
   }
 
@@ -640,7 +682,7 @@ class _DetalleVehiculoPageState extends State<DetalleVehiculoPage> {
       // Solo el ancho: con height 0, qr_flutter escala el logo manteniendo
       // su proporción real en vez de estirarlo a un cuadrado.
       embeddedImageStyle: logo == null ? null : const QrEmbeddedImageStyle(
-        size: Size(120, 0)),
+        size: Size(95, 0)),
     );
     final ui.Image image = await qrPainter.toImage(350);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
