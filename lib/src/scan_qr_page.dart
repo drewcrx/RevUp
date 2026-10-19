@@ -19,6 +19,8 @@ class _ScanQRPageState extends State<ScanQRPage>
     with SingleTickerProviderStateMixin {
   // ════════════════════════ LÓGICA ORIGINAL INTACTA ════════════════════════ //
   bool _processing = false;
+  final _scannerController = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates);
 
   late AnimationController _controller;
   late Animation<double>   _animation;
@@ -34,24 +36,38 @@ class _ScanQRPageState extends State<ScanQRPage>
   }
 
   @override
-  void dispose() { _controller.dispose(); super.dispose(); }
+  void dispose() { _scannerController.dispose(); _controller.dispose(); super.dispose(); }
 
   Future<void> _abrirDetalleDesdeQr(String codigoLeido) async {
-    final data = await ApiService.buscarDetallePorQrToken(codigoLeido);
-    if (!mounted) return;
-    if (data == null) {
-      _mostrarNoEncontrado(context, codigoLeido);
-      setState(() => _processing = false);
-      return;
+    try {
+      await _scannerController.stop();
+      final data = await ApiService.buscarDetallePorQrToken(codigoLeido);
+      if (!mounted) return;
+      if (data == null) {
+        await _mostrarNoEncontrado(context, codigoLeido);
+        return;
+      }
+      await Navigator.push(context,
+        MaterialPageRoute(
+          builder: (_) => DetalleVehiculoDesdeQrPage(data: data)));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No se pudo consultar el vehículo. Revisa la conexión e intenta de nuevo.')));
+    } finally {
+      if (mounted) {
+        setState(() => _processing = false);
+        try {
+          await _scannerController.start();
+        } catch (_) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No se pudo reabrir la cámara. Revisa su permiso e intenta de nuevo.')));
+        }
+      }
     }
-    await Navigator.push(context,
-      MaterialPageRoute(
-        builder: (_) => DetalleVehiculoDesdeQrPage(data: data)));
-    if (mounted) setState(() => _processing = false);
   }
 
-  void _mostrarNoEncontrado(BuildContext context, String codigo) {
-    showDialog(
+  Future<void> _mostrarNoEncontrado(BuildContext context, String codigo) {
+    return showDialog<void>(
       context: context,
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
@@ -164,16 +180,16 @@ class _ScanQRPageState extends State<ScanQRPage>
           // ── Cámara a pantalla completa ────────────────────────────────────
           Positioned.fill(
             child: MobileScanner(
-              controller: MobileScannerController(
-                detectionSpeed: DetectionSpeed.noDuplicates),
+              controller: _scannerController,
               onDetect: (capture) async {
                 if (_processing) return;
-                setState(() => _processing = true);
+                if (capture.barcodes.isEmpty) return;
                 final rawValue = capture.barcodes.first.rawValue;
                 if (rawValue == null || rawValue.trim().isEmpty) {
                   setState(() => _processing = false);
                   return;
                 }
+                setState(() => _processing = true);
                 await _abrirDetalleDesdeQr(extraerTokenDeQr(rawValue));
               },
             ),

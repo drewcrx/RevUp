@@ -549,7 +549,7 @@ router.put("/password", requireAuth, async (req, res) => {
     if (q.rowCount === 0) return res.status(404).json({ error: "Usuario no encontrado" });
 
     const ok = await bcrypt.compare(currentPassword, q.rows[0].password_hash);
-    if (!ok) return res.status(401).json({ error: "La contraseña actual es incorrecta" });
+    if (!ok) return res.status(400).json({ error: "La contraseña actual es incorrecta" });
 
     const sameAsCurrent = await bcrypt.compare(newPassword, q.rows[0].password_hash);
     if (sameAsCurrent) {

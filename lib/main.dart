@@ -17,25 +17,53 @@ import 'src/detalle_orden.dart';
 import 'src/reportes_page.dart';
 import 'src/propietarios.dart';
 import 'src/session.dart';
+import 'src/app_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppConfig.current;
   await Session.loadSession();
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  String _initialRoute() {
-    final hasToken = (Session.token != null && Session.token!.trim().isNotEmpty);
-    final hasUser  = (Session.user  != null);
-    return (hasToken && hasUser) ? '/inicio' : '/login';
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    Session.expirationEvents.addListener(_onSessionExpired);
+  }
+
+  void _onSessionExpired() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !Session.hasValidSession) {
+        _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+          '/login',
+          (_) => false,
+        );
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    Session.expirationEvents.removeListener(_onSessionExpired);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'RevUp',
 
@@ -45,10 +73,10 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF04060D),
         primaryColor: const Color(0xFF1E90FF),
         colorScheme: const ColorScheme.dark(
-          primary:   Color(0xFF1E90FF),
+          primary: Color(0xFF1E90FF),
           secondary: Color(0xFF0A5FCC),
-          surface:   Color(0xFF080E1A),
-          error:     Colors.redAccent,
+          surface: Color(0xFF080E1A),
+          error: Colors.redAccent,
         ),
 
         // AppBar — cada página lo sobreescribe con su propio diseño,
@@ -77,12 +105,12 @@ class MyApp extends StatelessWidget {
           ),
           bodyMedium: TextStyle(
             fontFamily: 'Ubuntu',
-            color: Color(0x99F0F4FF),   // kWhite al 60%
+            color: Color(0x99F0F4FF), // kWhite al 60%
             fontSize: 13,
           ),
           bodySmall: TextStyle(
             fontFamily: 'Ubuntu',
-            color: Color(0x66F0F4FF),   // kWhite al 40%
+            color: Color(0x66F0F4FF), // kWhite al 40%
             fontSize: 11,
           ),
         ),
@@ -99,7 +127,8 @@ class MyApp extends StatelessWidget {
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(
-              color: const Color(0xFF1E90FF).withOpacity(0.25)),
+              color: const Color(0xFF1E90FF).withOpacity(0.25),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
@@ -120,21 +149,27 @@ class MyApp extends StatelessWidget {
           behavior: SnackBarBehavior.floating,
           backgroundColor: const Color(0xFF0A5FCC),
           contentTextStyle: const TextStyle(
-            fontFamily: 'Ubuntu', color: Colors.white, fontSize: 13),
+            fontFamily: 'Ubuntu',
+            color: Colors.white,
+            fontSize: 13,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
 
         // Switch global
         switchTheme: SwitchThemeData(
-          thumbColor: WidgetStateProperty.resolveWith((s) =>
-            s.contains(WidgetState.selected)
+          thumbColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.selected)
                 ? const Color(0xFF1E90FF)
-                : const Color(0xFFF0F4FF).withOpacity(0.30)),
-          trackColor: WidgetStateProperty.resolveWith((s) =>
-            s.contains(WidgetState.selected)
+                : const Color(0xFFF0F4FF).withOpacity(0.30),
+          ),
+          trackColor: WidgetStateProperty.resolveWith(
+            (s) => s.contains(WidgetState.selected)
                 ? const Color(0xFF1E90FF).withOpacity(0.25)
-                : const Color(0xFFF0F4FF).withOpacity(0.08)),
+                : const Color(0xFFF0F4FF).withOpacity(0.08),
+          ),
         ),
 
         // Progress indicator global
@@ -152,24 +187,24 @@ class MyApp extends StatelessWidget {
       ),
 
       // ── Rutas ─────────────────────────────────────────────────────────────
-      initialRoute: _initialRoute(),
+      initialRoute: Session.hasValidSession ? '/inicio' : '/login',
 
       routes: {
-        '/login':            (_) => const LoginPage(),
-        '/register':         (_) => const RegisterPage(),
-        '/inicio':           (_) => const InicioPage(),
-        '/perfil':           (_) => const PerfilPage(),
-        '/editarperfil':     (_) => const EditarPerfilPage(),
-        '/vehiculos':        (_) => const VehiculosPage(),
+        '/login': (_) => const LoginPage(),
+        '/register': (_) => const RegisterPage(),
+        '/inicio': (_) => const InicioPage(),
+        '/perfil': (_) => const PerfilPage(),
+        '/editarperfil': (_) => const EditarPerfilPage(),
+        '/vehiculos': (_) => const VehiculosPage(),
         '/agregar_vehiculo': (_) => const AgregarVehiculoPage(),
-        '/scanqr':           (_) => ScanQRPage(),
-        '/forgot_password':  (_) => const ForgotPasswordPage(),
-        '/forgot_username':  (_) => const ForgotUsernamePage(),
+        '/scanqr': (_) => ScanQRPage(),
+        '/forgot_password': (_) => const ForgotPasswordPage(),
+        '/forgot_username': (_) => const ForgotUsernamePage(),
         '/cambiar_password': (_) => const CambiarPasswordPage(),
-        '/ordenes':          (_) => const OrdenesPage(),
-        '/nueva_orden':      (_) => const NuevaOrdenPage(),
-        '/reportes':         (_) => const ReportesPage(),
-        '/propietarios':     (_) => const PropietariosPage(),
+        '/ordenes': (_) => const OrdenesPage(),
+        '/nueva_orden': (_) => const NuevaOrdenPage(),
+        '/reportes': (_) => const ReportesPage(),
+        '/propietarios': (_) => const PropietariosPage(),
       },
 
       onGenerateRoute: (settings) {
@@ -178,14 +213,16 @@ class MyApp extends StatelessWidget {
 
           if (args is int) {
             return MaterialPageRoute(
-              builder: (_) => DetalleOrdenPage(ordenId: args));
+              builder: (_) => DetalleOrdenPage(ordenId: args),
+            );
           }
 
           if (args is String) {
             final id = int.tryParse(args);
             if (id != null) {
               return MaterialPageRoute(
-                builder: (_) => DetalleOrdenPage(ordenId: id));
+                builder: (_) => DetalleOrdenPage(ordenId: id),
+              );
             }
           }
 
@@ -196,10 +233,15 @@ class MyApp extends StatelessWidget {
               appBar: AppBar(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
-                title: const Text("ERROR",
+                title: const Text(
+                  "ERROR",
                   style: TextStyle(
-                    fontFamily: 'Ubuntu', color: Color(0xFFF0F4FF),
-                    fontWeight: FontWeight.w800, letterSpacing: 2)),
+                    fontFamily: 'Ubuntu',
+                    color: Color(0xFFF0F4FF),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
+                ),
               ),
               body: Center(
                 child: Text(
@@ -207,7 +249,8 @@ class MyApp extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'Ubuntu',
                     color: Colors.redAccent.withOpacity(0.70),
-                    fontSize: 13),
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ),

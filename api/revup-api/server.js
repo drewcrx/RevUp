@@ -1,47 +1,46 @@
-import express from "express";
-import cors from "cors";
-import dotenv from "dotenv";
-import path from "path";
+import './config/env.js';
+import { pathToFileURL } from 'node:url';
+import app from './app.js';
+import { ensureSchema, pool } from './db/connection.js';
 
-import router from "./routes/vehiculos.js";
-import usuariosRouter from "./routes/usuarios.js";
-import ordenesRoutes from "./routes/ordenes.js";
-import reportesRoutes from "./routes/reportes.js";
-import publicoRoutes from "./routes/publico.js";
-import catalogosRoutes from "./routes/catalogos.js";
-import propietariosRoutes from "./routes/propietarios.js";
-import { ensureSchema } from "./db/connection.js";
-
-dotenv.config();
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use((req, res, next) => {
-  req.body = req.body || {};
-  next();
-});
-
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
-// Fotos de OT (público — el mismo link se comparte en el QR del cliente)
-const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads");
-app.use("/uploads", express.static(UPLOAD_DIR));
-
-app.use("/reportes", reportesRoutes);
-app.use("/ordenes", ordenesRoutes);
-app.use("/vehiculos", router);
-app.use("/usuarios", usuariosRouter);
-app.use("/v", publicoRoutes);
-app.use("/catalogos", catalogosRoutes);
-app.use("/propietarios", propietariosRoutes);
-
-const PORT = Number(process.env.PORT || 3000);
-
-ensureSchema()
-  .catch((e) => console.error("Error preparando esquema de BD:", e.message))
-  .finally(() => {
-    app.listen(PORT, "0.0.0.0", () =>
-      console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`)
-    );
+export async function startServer({
+  prepareSchema = ensureSchema,
+  application = app,
+  port = Number(process.env.PORT || 3000),
+} = {}) {
+  await prepareSchema();
+  return new Promise((resolve, reject) => {
+    const server = application.listen(port, '0.0.0.0', () => resolve(server));
+    server.once('error', reject);
   });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  let activeServer;
+  let stopping = false;
+  async function shutdown() {
+    if (stopping) return;
+    stopping = true;
+    const deadline = setTimeout(() => process.exit(1), 15000);
+    deadline.unref();
+    if (activeServer) await new Promise(resolve => activeServer.close(resolve));
+    await pool.end();
+    process.exit(0);
+  }
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+  process.on('message', message => {
+    if (message?.type === 'shutdown') void shutdown();
+  });
+  startServer()
+    .then((server) => {
+      activeServer = server;
+      console.log(`Servidor escuchando en puerto ${server.address().port}`);
+      if (process.send) process.send({ type: 'ready' });
+    })
+    .catch(async (error) => {
+      console.error('No se pudo iniciar el servidor:', error.message);
+      await pool.end();
+      process.exitCode = 1;
+    });
+}

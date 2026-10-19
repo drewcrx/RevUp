@@ -7,23 +7,28 @@ import 'package:mime/mime.dart';
 
 import 'vehiculo_model.dart';
 import 'session.dart';
+import 'session_client.dart';
+import 'app_config.dart';
 
 class ApiService {
-  static const String baseUrl = "https://backrevup.byronrm.com";
+  static final String baseUrl = AppConfig.current.apiBaseUrl;
+  static http.Client client = SessionClient(http.Client());
 
-  // El backend rechaza cualquier subida cuyo mimetype no empiece con
-  // "image/". http.MultipartFile.fromPath intenta adivinarlo solo por la
-  // extensión del archivo, y en algunos dispositivos/Android la ruta que
-  // entrega la cámara no trae una extensión reconocible -> cae a
-  // application/octet-stream y el backend la rechaza con 400. Se fuerza
-  // explícitamente el tipo, con 'image/jpeg' como respaldo seguro.
-  static MediaType _imageMediaType(String path) {
-    final mimeType = lookupMimeType(path);
+  // XFile.readAsBytes funciona en navegador y en dispositivos móviles.
+  static Future<http.MultipartFile> _imageFile(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final mimeType = lookupMimeType(file.name, headerBytes: bytes);
+    var contentType = MediaType('image', 'jpeg');
     if (mimeType != null && mimeType.startsWith('image/')) {
       final parts = mimeType.split('/');
-      return MediaType(parts[0], parts[1]);
+      contentType = MediaType(parts[0], parts[1]);
     }
-    return MediaType('image', 'jpeg');
+    return http.MultipartFile.fromBytes(
+      'fotos',
+      bytes,
+      filename: file.name,
+      contentType: contentType,
+    );
   }
 
   // =========================
@@ -34,10 +39,7 @@ class ApiService {
     if (t == null || t.trim().isEmpty) {
       return {'Content-Type': 'application/json'};
     }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $t',
-    };
+    return {'Content-Type': 'application/json', 'Authorization': 'Bearer $t'};
   }
 
   static Exception _httpError(http.Response res, String msgBase) {
@@ -54,9 +56,11 @@ class ApiService {
   // QR / HISTORIAL (privado)
   // =========================
 
-  static Future<Map<String, dynamic>?> buscarDetallePorQrToken(String token) async {
+  static Future<Map<String, dynamic>?> buscarDetallePorQrToken(
+    String token,
+  ) async {
     final url = Uri.parse("$baseUrl/vehiculos/qr/$token");
-    final res = await http.get(url, headers: _headersAuth());
+    final res = await client.get(url, headers: _headersAuth());
 
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -64,9 +68,11 @@ class ApiService {
     return null;
   }
 
-  static Future<List<Map<String, dynamic>>?> obtenerHistorialPorQrToken(String token) async {
+  static Future<List<Map<String, dynamic>>?> obtenerHistorialPorQrToken(
+    String token,
+  ) async {
     final url = Uri.parse("$baseUrl/vehiculos/qr/$token/historial");
-    final res = await http.get(url, headers: _headersAuth());
+    final res = await client.get(url, headers: _headersAuth());
 
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -82,7 +88,7 @@ class ApiService {
 
   static Future<List<Vehiculo>> obtenerVehiculos() async {
     final url = Uri.parse("$baseUrl/vehiculos");
-    final res = await http.get(url, headers: _headersAuth());
+    final res = await client.get(url, headers: _headersAuth());
 
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body);
@@ -94,7 +100,7 @@ class ApiService {
 
   static Future<Vehiculo?> buscarPorPlaca(String placa) async {
     final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}");
-    final res = await http.get(url, headers: _headersAuth());
+    final res = await client.get(url, headers: _headersAuth());
 
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
@@ -143,13 +149,16 @@ class ApiService {
     }
 
     if (anio != null) bodyData["anio"] = anio;
-    if (color != null && color.trim().isNotEmpty) bodyData["color"] = color.trim();
+    if (color != null && color.trim().isNotEmpty)
+      bodyData["color"] = color.trim();
 
     if (propietarioId != null) {
       bodyData["propietario_id"] = propietarioId;
-    } else if (propietarioNombre != null && propietarioNombre.trim().isNotEmpty) {
+    } else if (propietarioNombre != null &&
+        propietarioNombre.trim().isNotEmpty) {
       bodyData["propietario_nombre"] = propietarioNombre.trim();
-      if (propietarioTelefono != null && propietarioTelefono.trim().isNotEmpty) {
+      if (propietarioTelefono != null &&
+          propietarioTelefono.trim().isNotEmpty) {
         bodyData["propietario_telefono"] = propietarioTelefono.trim();
       }
     }
@@ -172,13 +181,14 @@ class ApiService {
       bodyData["cilindraje"] = cilindraje.trim();
     }
 
-    final res = await http.post(
-      url,
-      headers: _headersAuth(),
-      body: jsonEncode(bodyData),
-    );
+    final res = await client
+        .post(url, headers: _headersAuth(), body: jsonEncode(bodyData))
+        .timeout(const Duration(seconds: 12));
 
-    return res.statusCode == 200;
+    if (res.statusCode != 200 && res.statusCode != 201) {
+      throw _httpError(res, "No se pudo guardar el vehículo");
+    }
+    return true;
   }
 
   // ✅ ACTUALIZADO: ahora soporta nuevos campos (sin romper llamadas viejas)
@@ -212,7 +222,9 @@ class ApiService {
 
     if (notaIngreso != null) {
       final n = notaIngreso.trim();
-      body["nota_ingreso"] = n.isEmpty ? null : (n.length > 300 ? n.substring(0, 300) : n);
+      body["nota_ingreso"] = n.isEmpty
+          ? null
+          : (n.length > 300 ? n.substring(0, 300) : n);
     }
 
     // ✅ NUEVO
@@ -235,7 +247,7 @@ class ApiService {
 
     if (body.isEmpty) return false;
 
-    final res = await http.put(
+    final res = await client.put(
       url,
       headers: _headersAuth(),
       body: jsonEncode(body),
@@ -246,7 +258,7 @@ class ApiService {
 
   static Future<bool> eliminarVehiculoPorPlaca(String placa) async {
     final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}");
-    final res = await http.delete(url, headers: _headersAuth());
+    final res = await client.delete(url, headers: _headersAuth());
 
     return res.statusCode == 200 || res.statusCode == 204;
   }
@@ -255,9 +267,14 @@ class ApiService {
   // PROPIETARIOS (privado) — normalizado, 1 propietario -> N vehículos
   // =========================
 
-  static Future<List<Map<String, dynamic>>> buscarPropietarios(String query) async {
-    final url = Uri.parse("$baseUrl/propietarios?q=${Uri.encodeQueryComponent(query)}");
-    final res = await http.get(url, headers: _headersAuth())
+  static Future<List<Map<String, dynamic>>> buscarPropietarios(
+    String query,
+  ) async {
+    final url = Uri.parse(
+      "$baseUrl/propietarios?q=${Uri.encodeQueryComponent(query)}",
+    );
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
@@ -268,7 +285,8 @@ class ApiService {
 
   static Future<Map<String, dynamic>> obtenerPropietario(int id) async {
     final url = Uri.parse("$baseUrl/propietarios/$id");
-    final res = await http.get(url, headers: _headersAuth())
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
@@ -284,11 +302,13 @@ class ApiService {
   }) async {
     final url = Uri.parse("$baseUrl/propietarios");
     final body = <String, dynamic>{"nombre": nombre.trim()};
-    if (telefono != null && telefono.trim().isNotEmpty) body["telefono"] = telefono.trim();
-    if (cedula != null && cedula.trim().isNotEmpty) body["cedula"] = cedula.trim();
+    if (telefono != null && telefono.trim().isNotEmpty)
+      body["telefono"] = telefono.trim();
+    if (cedula != null && cedula.trim().isNotEmpty)
+      body["cedula"] = cedula.trim();
     if (email != null && email.trim().isNotEmpty) body["email"] = email.trim();
 
-    final res = await http
+    final res = await client
         .post(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 201) {
@@ -311,7 +331,7 @@ class ApiService {
     if (cedula != null) body["cedula"] = cedula.trim();
     if (email != null) body["email"] = email.trim();
 
-    final res = await http
+    final res = await client
         .put(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -328,13 +348,17 @@ class ApiService {
     String? nombre,
     String? telefono,
   }) async {
-    final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/propietario");
+    final url = Uri.parse(
+      "$baseUrl/vehiculos/${placa.toUpperCase()}/propietario",
+    );
     final body = <String, dynamic>{};
     if (propietarioId != null) body["propietario_id"] = propietarioId;
-    if (nombre != null && nombre.trim().isNotEmpty) body["nombre"] = nombre.trim();
-    if (telefono != null && telefono.trim().isNotEmpty) body["telefono"] = telefono.trim();
+    if (nombre != null && nombre.trim().isNotEmpty)
+      body["nombre"] = nombre.trim();
+    if (telefono != null && telefono.trim().isNotEmpty)
+      body["telefono"] = telefono.trim();
 
-    final res = await http
+    final res = await client
         .put(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
@@ -347,9 +371,11 @@ class ApiService {
   // HISTORIAL DE OTs POR VEHÍCULO (privado)
   // =========================
 
-  static Future<List<Map<String, dynamic>>> obtenerOtsDelVehiculo(String placa) async {
+  static Future<List<Map<String, dynamic>>> obtenerOtsDelVehiculo(
+    String placa,
+  ) async {
     final url = Uri.parse("$baseUrl/vehiculos/${placa.toUpperCase()}/ordenes");
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -367,7 +393,8 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> obtenerMarcas() async {
     final url = Uri.parse("$baseUrl/catalogos/marcas");
-    final res = await http.get(url, headers: _headersAuth())
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
@@ -378,7 +405,8 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> obtenerModelos(int marcaId) async {
     final url = Uri.parse("$baseUrl/catalogos/marcas/$marcaId/modelos");
-    final res = await http.get(url, headers: _headersAuth())
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
@@ -390,7 +418,8 @@ class ApiService {
   /// categoria: color | tipo_vehiculo | combustible | transmision
   static Future<List<String>> obtenerCatalogoItems(String categoria) async {
     final url = Uri.parse("$baseUrl/catalogos/items/$categoria");
-    final res = await http.get(url, headers: _headersAuth())
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
@@ -399,9 +428,14 @@ class ApiService {
     throw _httpError(res, "Error al obtener catálogo");
   }
 
-  static Future<List<Map<String, dynamic>>> buscarRepuestosCatalogo(String query) async {
-    final url = Uri.parse("$baseUrl/catalogos/repuestos?q=${Uri.encodeQueryComponent(query)}");
-    final res = await http.get(url, headers: _headersAuth())
+  static Future<List<Map<String, dynamic>>> buscarRepuestosCatalogo(
+    String query,
+  ) async {
+    final url = Uri.parse(
+      "$baseUrl/catalogos/repuestos?q=${Uri.encodeQueryComponent(query)}",
+    );
+    final res = await client
+        .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;
@@ -418,7 +452,7 @@ class ApiService {
     final url = Uri.parse("$baseUrl/usuarios/resend-verification");
 
     try {
-      final res = await http
+      final res = await client
           .post(
             url,
             headers: const {'Content-Type': 'application/json'},
@@ -443,7 +477,7 @@ class ApiService {
   }) async {
     final url = Uri.parse("$baseUrl/usuarios/register");
 
-    final res = await http.post(
+    final res = await client.post(
       url,
       headers: const {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -473,7 +507,7 @@ class ApiService {
     final url = Uri.parse("$baseUrl/usuarios/login");
 
     try {
-      final res = await http
+      final res = await client
           .post(
             url,
             headers: const {'Content-Type': 'application/json'},
@@ -488,7 +522,8 @@ class ApiService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
 
-        final token = (data['token'] ?? data['accessToken'] ?? data['jwt'])?.toString();
+        final token = (data['token'] ?? data['accessToken'] ?? data['jwt'])
+            ?.toString();
         final Map<String, dynamic> user =
             (data['user'] ?? data['usuario']) as Map<String, dynamic>;
 
@@ -519,7 +554,7 @@ class ApiService {
     if (nombre != null) body['nombre'] = nombre;
     if (avatarB64 != null) body['avatar_b64'] = avatarB64;
 
-    final res = await http
+    final res = await client
         .put(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
 
@@ -539,7 +574,7 @@ class ApiService {
     final url = Uri.parse("$baseUrl/usuarios/password");
 
     try {
-      final res = await http
+      final res = await client
           .put(
             url,
             headers: _headersAuth(),
@@ -583,7 +618,7 @@ class ApiService {
 
     final url = Uri.parse("$baseUrl/ordenes");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -597,8 +632,12 @@ class ApiService {
       }).toList();
 
       filtradas.sort((a, b) {
-        final da = DateTime.tryParse((a["created_at"] ?? "").toString()) ?? DateTime(1970);
-        final db = DateTime.tryParse((b["created_at"] ?? "").toString()) ?? DateTime(1970);
+        final da =
+            DateTime.tryParse((a["created_at"] ?? "").toString()) ??
+            DateTime(1970);
+        final db =
+            DateTime.tryParse((b["created_at"] ?? "").toString()) ??
+            DateTime(1970);
         return db.compareTo(da);
       });
 
@@ -608,12 +647,16 @@ class ApiService {
     throw _httpError(res, "Error al obtener OTs por placa");
   }
 
-  static Future<List<Map<String, dynamic>>> obtenerOrdenes({bool soloMias = true}) async {
+  static Future<List<Map<String, dynamic>>> obtenerOrdenes({
+    bool soloMias = true,
+  }) async {
     final url = soloMias
-        ? Uri.parse("$baseUrl/ordenes?mechanicId=${_currentMechanicIdOrThrow()}")
+        ? Uri.parse(
+            "$baseUrl/ordenes?mechanicId=${_currentMechanicIdOrThrow()}",
+          )
         : Uri.parse("$baseUrl/ordenes");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -628,10 +671,12 @@ class ApiService {
     throw _httpError(res, "Error al obtener órdenes");
   }
 
-  static Future<List<Map<String, dynamic>>> obtenerOtsPorQrToken(String token) async {
+  static Future<List<Map<String, dynamic>>> obtenerOtsPorQrToken(
+    String token,
+  ) async {
     final url = Uri.parse("$baseUrl/vehiculos/qr/$token/ots");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -656,7 +701,7 @@ class ApiService {
     };
     if (kilometraje != null) body["kilometraje"] = kilometraje;
 
-    final res = await http
+    final res = await client
         .post(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
 
@@ -673,7 +718,7 @@ class ApiService {
   static Future<Map<String, dynamic>> obtenerDetalleOrden(int ordenId) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -694,7 +739,7 @@ class ApiService {
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/servicios");
 
-    final res = await http
+    final res = await client
         .post(
           url,
           headers: _headersAuth(),
@@ -719,7 +764,7 @@ class ApiService {
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/repuestos");
 
-    final res = await http
+    final res = await client
         .post(
           url,
           headers: _headersAuth(),
@@ -747,7 +792,7 @@ class ApiService {
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/pagos");
 
-    final res = await http
+    final res = await client
         .post(
           url,
           headers: _headersAuth(),
@@ -766,7 +811,7 @@ class ApiService {
   static Future<Map<String, dynamic>> cerrarOT(int ordenId) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/cerrar");
 
-    final res = await http
+    final res = await client
         .post(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -795,11 +840,12 @@ class ApiService {
     }
     request.fields['tipo'] = tipo;
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath(
-        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
+      request.files.add(await _imageFile(archivo));
     }
 
-    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final streamed = await client
+        .send(request)
+        .timeout(const Duration(seconds: 45));
     final res = await http.Response.fromStream(streamed);
 
     if (res.statusCode == 201) {
@@ -811,7 +857,7 @@ class ApiService {
 
   static Future<void> eliminarFotoOT(int fotoId) async {
     final url = Uri.parse("$baseUrl/ordenes/fotos/$fotoId");
-    final res = await http
+    final res = await client
         .delete(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -833,12 +879,19 @@ class ApiService {
     String? observaciones,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/danos");
-    final res = await http
-        .post(url, headers: _headersAuth(), body: jsonEncode({
-          "vista": vista, "zona": zona, "tipo": tipo,
-          "estado_dano": estadoDano, "tipo_reparacion": tipoReparacion,
-          "observaciones": observaciones,
-        }))
+    final res = await client
+        .post(
+          url,
+          headers: _headersAuth(),
+          body: jsonEncode({
+            "vista": vista,
+            "zona": zona,
+            "tipo": tipo,
+            "estado_dano": estadoDano,
+            "tipo_reparacion": tipoReparacion,
+            "observaciones": observaciones,
+          }),
+        )
         .timeout(const Duration(seconds: 10));
 
     if (res.statusCode == 201) {
@@ -861,7 +914,7 @@ class ApiService {
     if (tipoReparacion != null) body["tipo_reparacion"] = tipoReparacion;
     if (observaciones != null) body["observaciones"] = observaciones;
 
-    final res = await http
+    final res = await client
         .put(url, headers: _headersAuth(), body: jsonEncode(body))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -871,7 +924,7 @@ class ApiService {
 
   static Future<void> eliminarDano(int danoId) async {
     final url = Uri.parse("$baseUrl/ordenes/danos/$danoId");
-    final res = await http
+    final res = await client
         .delete(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -891,11 +944,12 @@ class ApiService {
       request.headers['Authorization'] = 'Bearer $t';
     }
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath(
-        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
+      request.files.add(await _imageFile(archivo));
     }
 
-    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final streamed = await client
+        .send(request)
+        .timeout(const Duration(seconds: 45));
     final res = await http.Response.fromStream(streamed);
 
     if (res.statusCode == 201) {
@@ -907,7 +961,7 @@ class ApiService {
 
   static Future<void> eliminarFotoDano(int fotoId) async {
     final url = Uri.parse("$baseUrl/ordenes/danos/fotos/$fotoId");
-    final res = await http
+    final res = await client
         .delete(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -924,8 +978,12 @@ class ApiService {
     required String diagnostico,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/diagnostico");
-    final res = await http
-        .put(url, headers: _headersAuth(), body: jsonEncode({"diagnostico": diagnostico}))
+    final res = await client
+        .put(
+          url,
+          headers: _headersAuth(),
+          body: jsonEncode({"diagnostico": diagnostico}),
+        )
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
       throw _httpError(res, "No se pudo guardar el diagnóstico");
@@ -937,7 +995,7 @@ class ApiService {
     String? nota,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/actualizaciones");
-    final res = await http
+    final res = await client
         .post(url, headers: _headersAuth(), body: jsonEncode({"nota": nota}))
         .timeout(const Duration(seconds: 10));
     if (res.statusCode == 201) {
@@ -948,7 +1006,7 @@ class ApiService {
 
   static Future<void> eliminarActualizacionOT(int actualizacionId) async {
     final url = Uri.parse("$baseUrl/ordenes/actualizaciones/$actualizacionId");
-    final res = await http
+    final res = await client
         .delete(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -960,7 +1018,9 @@ class ApiService {
     required int actualizacionId,
     required List<XFile> archivos,
   }) async {
-    final url = Uri.parse("$baseUrl/ordenes/actualizaciones/$actualizacionId/fotos");
+    final url = Uri.parse(
+      "$baseUrl/ordenes/actualizaciones/$actualizacionId/fotos",
+    );
     final request = http.MultipartRequest('POST', url);
 
     final t = Session.token;
@@ -968,11 +1028,12 @@ class ApiService {
       request.headers['Authorization'] = 'Bearer $t';
     }
     for (final archivo in archivos) {
-      request.files.add(await http.MultipartFile.fromPath(
-        'fotos', archivo.path, contentType: _imageMediaType(archivo.path)));
+      request.files.add(await _imageFile(archivo));
     }
 
-    final streamed = await request.send().timeout(const Duration(seconds: 45));
+    final streamed = await client
+        .send(request)
+        .timeout(const Duration(seconds: 45));
     final res = await http.Response.fromStream(streamed);
 
     if (res.statusCode == 201) {
@@ -984,7 +1045,7 @@ class ApiService {
 
   static Future<void> eliminarFotoActualizacion(int fotoId) async {
     final url = Uri.parse("$baseUrl/ordenes/actualizaciones/fotos/$fotoId");
-    final res = await http
+    final res = await client
         .delete(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
@@ -996,11 +1057,15 @@ class ApiService {
   // REPORTES (privado)
   // =========================
 
-  static Future<List<Map<String, dynamic>>> obtenerReporteMecanicos({String? month}) async {
-    final q = (month != null && month.trim().isNotEmpty) ? "?month=${month.trim()}" : "";
+  static Future<List<Map<String, dynamic>>> obtenerReporteMecanicos({
+    String? month,
+  }) async {
+    final q = (month != null && month.trim().isNotEmpty)
+        ? "?month=${month.trim()}"
+        : "";
     final url = Uri.parse("$baseUrl/reportes/mecanicos$q");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -1015,11 +1080,15 @@ class ApiService {
     throw _httpError(res, "Error al obtener reporte");
   }
 
-  static Future<Map<String, dynamic>> obtenerMiResumenMensual({String? month}) async {
-    final q = (month != null && month.trim().isNotEmpty) ? "?month=${month.trim()}" : "";
+  static Future<Map<String, dynamic>> obtenerMiResumenMensual({
+    String? month,
+  }) async {
+    final q = (month != null && month.trim().isNotEmpty)
+        ? "?month=${month.trim()}"
+        : "";
     final url = Uri.parse("$baseUrl/reportes/mi-resumen$q");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -1030,11 +1099,15 @@ class ApiService {
     throw _httpError(res, "Error al obtener mi resumen mensual");
   }
 
-  static Future<List<Map<String, dynamic>>> obtenerMisOtsDelMes({String? month}) async {
-    final q = (month != null && month.trim().isNotEmpty) ? "?month=${month.trim()}" : "";
+  static Future<List<Map<String, dynamic>>> obtenerMisOtsDelMes({
+    String? month,
+  }) async {
+    final q = (month != null && month.trim().isNotEmpty)
+        ? "?month=${month.trim()}"
+        : "";
     final url = Uri.parse("$baseUrl/reportes/mi-mes/ordenes$q");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -1046,11 +1119,15 @@ class ApiService {
     throw _httpError(res, "Error al obtener mis OTs del mes");
   }
 
-  static Future<Map<String, dynamic>> obtenerResumenMensual({String? month}) async {
-    final q = (month != null && month.trim().isNotEmpty) ? "?month=${month.trim()}" : "";
+  static Future<Map<String, dynamic>> obtenerResumenMensual({
+    String? month,
+  }) async {
+    final q = (month != null && month.trim().isNotEmpty)
+        ? "?month=${month.trim()}"
+        : "";
     final url = Uri.parse("$baseUrl/reportes/resumen$q");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -1068,10 +1145,12 @@ class ApiService {
     required int mechanicId,
     String? month,
   }) async {
-    final q = (month != null && month.trim().isNotEmpty) ? "?month=${month.trim()}" : "";
+    final q = (month != null && month.trim().isNotEmpty)
+        ? "?month=${month.trim()}"
+        : "";
     final url = Uri.parse("$baseUrl/reportes/mecanicos/$mechanicId/ordenes$q");
 
-    final res = await http
+    final res = await client
         .get(url, headers: _headersAuth())
         .timeout(const Duration(seconds: 10));
 
@@ -1093,7 +1172,7 @@ class ApiService {
   static Future<String?> forgotPassword({required String correo}) async {
     final url = Uri.parse("$baseUrl/usuarios/forgot-password");
     try {
-      final res = await http
+      final res = await client
           .post(
             url,
             headers: const {'Content-Type': 'application/json'},
@@ -1114,7 +1193,7 @@ class ApiService {
     final url = Uri.parse("$baseUrl/usuarios/forgot-username");
 
     try {
-      final res = await http
+      final res = await client
           .post(
             url,
             headers: const {'Content-Type': 'application/json'},
@@ -1123,7 +1202,8 @@ class ApiService {
           .timeout(const Duration(seconds: 12));
 
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-      return (data['mensaje'] ?? "Si el correo existe, te enviamos tu usuario.").toString();
+      return (data['mensaje'] ?? "Si el correo existe, te enviamos tu usuario.")
+          .toString();
     } catch (_) {
       return "No se pudo conectar al servidor. Verifica que el backend esté encendido.";
     }
@@ -1150,9 +1230,13 @@ class ApiService {
     return [];
   }
 
-  static Future<List<Map<String, dynamic>>?> _tryGetOtsByToken(String token) async {
+  static Future<List<Map<String, dynamic>>?> _tryGetOtsByToken(
+    String token,
+  ) async {
     final url = Uri.parse("$baseUrl/vehiculos/qr/$token/ots");
-    final res = await http.get(url, headers: _headersAuth()).timeout(const Duration(seconds: 10));
+    final res = await client
+        .get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
 
     if (res.statusCode == 200) {
       final decoded = jsonDecode(res.body);
@@ -1160,7 +1244,9 @@ class ApiService {
         return decoded.cast<Map<String, dynamic>>();
       }
       if (decoded is Map<String, dynamic> && decoded["ots"] is List) {
-        return (decoded["ots"] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        return (decoded["ots"] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
       }
       return <Map<String, dynamic>>[];
     }
@@ -1172,7 +1258,9 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> _getOtsByPlaca(String placa) async {
     final url = Uri.parse("$baseUrl/ordenes?placa=$placa");
-    final res = await http.get(url, headers: _headersAuth()).timeout(const Duration(seconds: 10));
+    final res = await client
+        .get(url, headers: _headersAuth())
+        .timeout(const Duration(seconds: 10));
 
     if (res.statusCode == 200) {
       final List data = jsonDecode(res.body) as List;

@@ -1,5 +1,10 @@
 # RevUp — Guía de Despliegue en VPS
 
+Este documento prepara un futuro entorno de producción. El entorno local
+validado se describe en [LOCAL_ANDROID.md](LOCAL_ANDROID.md) y no necesita
+VPS. Antes de desplegar, configura la URL HTTPS de producción, los dominios
+de Docker/Traefik y las credenciales del servidor de destino.
+
 ## Arquitectura
 
 ```
@@ -59,16 +64,28 @@ nano .env   # editar con los valores reales
 htpasswd -nb admin tupassword
 # copiar el resultado en TRAEFIK_AUTH del .env
 
-# 4. Levantar todos los servicios
+# 4. Compilar la web (requiere Flutter en el equipo de compilación)
+cp config/production.example.json config/production.json
+# Configurar API_BASE_URL con la URL HTTPS real
+flutter pub get
+flutter build web --release --dart-define-from-file=config/production.json
+
+# 5. Levantar todos los servicios
 docker compose up -d --build
 
-# 5. Verificar que todo esté corriendo
+# 6. Verificar que todo esté corriendo
 docker compose ps
 ```
 
 ## CI/CD con GitHub Actions
 
-El pipeline se activa automáticamente en cada `git push` a `main`.
+El workflow `.github/workflows/deploy.yml`, en la raíz del repositorio,
+ejecuta pruebas Flutter/backend y compila la web en cada push a `main` y
+pull request. Subir código no publica imágenes ni despliega al VPS.
+
+Para publicar y desplegar, configura la variable de repositorio
+`REVUP_API_URL` con la URL HTTPS real y ejecuta manualmente el workflow con
+`deploy` activado. Configura también los secrets siguientes.
 
 ### Secrets a configurar en GitHub (Settings → Secrets → Actions)
 
@@ -80,11 +97,13 @@ El pipeline se activa automáticamente en cada `git push` a `main`.
 
 ### Flujo del pipeline
 
-1. **Build backend** → imagen Docker → push a `ghcr.io/drewcrx/revup-backend:latest`
-2. **Build frontend** → imagen Docker (Flutter web + nginx) → push a `ghcr.io/drewcrx/revup-frontend:latest`
-3. **Deploy** → SSH al VPS → sincroniza `/opt/revup` con `git reset --hard origin/main`
+1. **Validación** → pruebas Flutter/backend y compilación web.
+2. **Build backend** → imagen Docker → push a `ghcr.io/drewcrx/revup-backend:latest`
+3. **Build frontend** → imagen Docker (Flutter web + nginx) → push a `ghcr.io/drewcrx/revup-frontend:latest`
+4. **Deploy** → SSH al VPS → sincroniza `/opt/revup` con `git reset --hard origin/main`
    (así `docker-compose.yml`, `traefik/dynamic.yml`, etc. quedan siempre iguales a lo que hay
-   en GitHub — sin esto, cambios a esos archivos había que aplicarlos a mano) → `docker compose pull && docker compose up -d`
+   en GitHub) → entra a `/opt/revup` → `docker compose pull && docker compose up -d`.
+   Los pasos 2 a 4 solo se ejecutan con la opción manual `deploy`.
 
 ## Actualización manual
 

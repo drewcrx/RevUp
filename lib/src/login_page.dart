@@ -440,6 +440,9 @@ class _LoginPageState extends State<LoginPage>
                             TextFormField(
                               key: const Key('identityField'),
                               controller: _identityController,
+                              keyboardType: TextInputType.emailAddress,
+                              autocorrect: false,
+                              enableSuggestions: false,
                               style: const TextStyle(fontFamily: 'Ubuntu', color: kWhite, fontSize: 14, letterSpacing: 0.4),
                               decoration: _fieldDecoration(
                                   "Usuario o correo", Icons.person_outline),
@@ -452,6 +455,8 @@ class _LoginPageState extends State<LoginPage>
                             TextFormField(
                               key: const Key('passwordField'),
                               controller: _passwordController,
+                              autocorrect: false,
+                              enableSuggestions: false,
                               obscureText: _obscurePass,
                               style: const TextStyle(fontFamily: 'Ubuntu', color: kWhite, fontSize: 14, letterSpacing: 0.4),
                               decoration:

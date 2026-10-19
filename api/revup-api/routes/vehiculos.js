@@ -166,7 +166,7 @@ router.get("/qr/:token/ots", async (req, res) => {
         estado, pago_estado,
         total_servicios, total_repuestos, total,
         kilometraje_ot,
-        created_at, closed_at, 
+        created_at, closed_at,
         CASE
           WHEN estado = 'ENTREGADO' THEN 'ENTREGADO'
           WHEN estado = 'RECIBIDO'

@@ -66,6 +66,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
+      APP_ENV: production
       PGUSER: ${PGUSER}
       PGPASSWORD: ${PGPASSWORD}
       PGHOST: db
@@ -73,7 +74,7 @@ services:
       PGDATABASE: ${PGDATABASE}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES: 7d
-      APP_URL: https://backrevup.byronrm.com
+      APP_URL: ${APP_URL}
       MAIL_HOST: ${MAIL_HOST}
       MAIL_PORT: ${MAIL_PORT}
       MAIL_SECURE: ${MAIL_SECURE}

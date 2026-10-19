@@ -189,15 +189,15 @@ async function getActualizacionIfAllowed(actId, user) {
 // =========================
 // Helpers
 // =========================
-async function recalcularTotales(ordenId) {
-  const s = await pool.query(
+async function recalcularTotales(ordenId, db = pool) {
+  const s = await db.query(
     `SELECT COALESCE(SUM(precio), 0) AS total_servicios
      FROM orden_servicios
      WHERE orden_id = $1`,
     [ordenId]
   );
 
-  const r = await pool.query(
+  const r = await db.query(
     `SELECT COALESCE(SUM(cantidad * precio_unitario), 0) AS total_repuestos
      FROM orden_repuestos
      WHERE orden_id = $1`,
@@ -208,7 +208,7 @@ async function recalcularTotales(ordenId) {
   const totalRepuestos = Number(r.rows[0].total_repuestos || 0);
   const total = totalServicios + totalRepuestos;
 
-  await pool.query(
+  await db.query(
     `UPDATE ordenes_trabajo
      SET total_servicios = $2,
          total_repuestos = $3,
@@ -220,8 +220,8 @@ async function recalcularTotales(ordenId) {
   return { totalServicios, totalRepuestos, total };
 }
 
-async function getPagado(ordenId) {
-  const p = await pool.query(
+async function getPagado(ordenId, db = pool) {
+  const p = await db.query(
     `SELECT COALESCE(SUM(monto), 0) AS pagado
      FROM orden_pagos
      WHERE orden_id = $1`,
@@ -230,16 +230,16 @@ async function getPagado(ordenId) {
   return Number(p.rows[0].pagado || 0);
 }
 
-async function recalcularPagoEstado(ordenId) {
-  const ot = await pool.query(`SELECT total FROM ordenes_trabajo WHERE id = $1`, [ordenId]);
+async function recalcularPagoEstado(ordenId, db = pool) {
+  const ot = await db.query(`SELECT total FROM ordenes_trabajo WHERE id = $1`, [ordenId]);
   if (ot.rowCount === 0) return;
 
   const total = Number(ot.rows[0].total || 0);
-  const pagado = await getPagado(ordenId);
+  const pagado = await getPagado(ordenId, db);
 
-  const pagoEstado = total > 0 && pagado >= total ? "PAGADO" : "PENDIENTE";
+  const pagoEstado = pagado >= total ? "PAGADO" : "PENDIENTE";
 
-  await pool.query(
+  await db.query(
     `UPDATE ordenes_trabajo
      SET pago_estado = $2
      WHERE id = $1`,
@@ -249,8 +249,8 @@ async function recalcularPagoEstado(ordenId) {
 
 // ✅ NUEVO: cuando se agrega trabajo (servicio/repuesto) y la OT estaba RECIBIDO,
 // pasa a PENDIENTE automáticamente.
-async function marcarPendienteSiRecibido(ordenId) {
-  await pool.query(
+async function marcarPendienteSiRecibido(ordenId, db = pool) {
+  await db.query(
     `UPDATE ordenes_trabajo
      SET estado = 'PENDIENTE'
      WHERE id = $1
@@ -283,6 +283,37 @@ async function getOtIfAllowed(ordenId, user) {
   return ot.rowCount ? ot.rows[0] : null;
 }
 
+// Serializa cargos, pagos y entrega sobre la misma fila. La validación del
+// estado y el cambio financiero se confirman juntos o se revierten juntos.
+async function modificarOtAbierta(req, res, mensajeError, operation) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const params = [Number(req.params.id)];
+    const filtro = req.user.role === 'superuser' ? '' : ' AND mechanic_id = $2';
+    if (filtro) params.push(req.user.id);
+    const found = await client.query(
+      `SELECT * FROM ordenes_trabajo WHERE id = $1 ${filtro} FOR UPDATE`, params,
+    );
+    if (!found.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'OT no encontrada' });
+    }
+    if (found.rows[0].estado === 'ENTREGADO') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'La OT ya fue entregada y no admite cambios financieros' });
+    }
+    const result = await operation(client, found.rows[0]);
+    await client.query(result.status >= 400 ? 'ROLLBACK' : 'COMMIT');
+    return res.status(result.status).json(result.body);
+  } catch (e) {
+    await client.query('ROLLBACK');
+    return res.status(500).json({ error: mensajeError, detalle: e.message });
+  } finally {
+    client.release();
+  }
+}
+
 // =========================
 // 1) Crear OT (CON KM SNAPSHOT)
 // - mechanic_id SIEMPRE desde JWT
@@ -301,7 +332,10 @@ router.post("/", async (req, res) => {
     return res.status(401).json({ error: "Token válido pero sin id de usuario" });
   }
 
-  const placaUpper = String(placa).toUpperCase();
+  const placaUpper = String(placa).trim().toUpperCase();
+  if (!placaUpper || !String(symptoms).trim()) {
+    return res.status(400).json({ error: 'Placa y síntomas son obligatorios' });
+  }
 
   // El kilometraje con el que llega el auto se registra aquí, al crear la
   // OT (que es cuando el auto está físicamente presente) — no se asume
@@ -315,6 +349,17 @@ router.post("/", async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const params = [placaUpper];
+    const filtro = req.user.role === 'superuser' ? '' : ' AND mechanic_id = $2';
+    if (filtro) params.push(mechanicId);
+    const vehiculo = await client.query(
+      `SELECT id, kilometraje FROM vehiculos WHERE placa = $1 ${filtro} FOR UPDATE`, params,
+    );
+    if (!vehiculo.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Vehículo no encontrado' });
+    }
+
     let kmOt = kmIngreso;
     if (kmIngreso !== null) {
       // GREATEST evita que un typo al tipear el km de ingreso (ej. 8000 en
@@ -326,20 +371,16 @@ router.post("/", async (req, res) => {
         [kmIngreso, placaUpper]
       );
     } else {
-      const vk = await client.query(
-        `SELECT kilometraje FROM vehiculos WHERE placa = $1 LIMIT 1`,
-        [placaUpper]
-      );
-      kmOt = vk.rowCount ? Number(vk.rows[0].kilometraje || 0) : null;
+      kmOt = Number(vehiculo.rows[0].kilometraje || 0);
     }
 
     const q = await client.query(
       `
       INSERT INTO ordenes_trabajo (
         placa, mechanic_id, usuario_id, symptoms,
-        estado, total, kilometraje_ot, created_at
+        estado, pago_estado, total, kilometraje_ot, created_at
       )
-      VALUES ($1, $2, $3, $4, 'RECIBIDO', 0, $5, NOW())
+      VALUES ($1, $2, $3, $4, 'RECIBIDO', 'PAGADO', 0, $5, NOW())
       RETURNING *;
       `,
       [placaUpper, mechanicId, mechanicId, String(symptoms), kmOt]
@@ -913,26 +954,21 @@ router.post("/:id/servicios", async (req, res) => {
     return res.status(400).json({ error: "precio inválido" });
   }
 
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
+  return modificarOtAbierta(req, res, "Error agregando servicio", async (client) => {
+    const q = await client.query(
       `INSERT INTO orden_servicios (orden_id, descripcion, precio)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [ordenId, String(descripcion).trim(), precioNum]
     );
 
-    await recalcularTotales(ordenId);
-    await recalcularPagoEstado(ordenId);
+    await recalcularTotales(ordenId, client);
+    await recalcularPagoEstado(ordenId, client);
 
-    await marcarPendienteSiRecibido(ordenId);
+    await marcarPendienteSiRecibido(ordenId, client);
 
-    return res.status(201).json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error agregando servicio", detalle: e.message });
-  }
+    return { status: 201, body: q.rows[0] };
+  });
 });
 
 // =========================
@@ -958,26 +994,21 @@ router.post("/:id/repuestos", async (req, res) => {
     return res.status(400).json({ error: "precio unitario inválido" });
   }
 
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
+  return modificarOtAbierta(req, res, "Error agregando repuesto", async (client) => {
+    const q = await client.query(
       `INSERT INTO orden_repuestos (orden_id, nombre, cantidad, costo_unitario, precio_unitario)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [ordenId, String(nombre).trim(), cantidadNum, costoNum, precioNum]
     );
 
-    await recalcularTotales(ordenId);
-    await recalcularPagoEstado(ordenId);
+    await recalcularTotales(ordenId, client);
+    await recalcularPagoEstado(ordenId, client);
 
-    await marcarPendienteSiRecibido(ordenId);
+    await marcarPendienteSiRecibido(ordenId, client);
 
-    return res.status(201).json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error agregando repuesto", detalle: e.message });
-  }
+    return { status: 201, body: q.rows[0] };
+  });
 });
 
 // =========================
@@ -995,23 +1026,18 @@ router.post("/:id/pagos", async (req, res) => {
     return res.status(400).json({ error: "monto inválido" });
   }
 
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
+  return modificarOtAbierta(req, res, "Error registrando pago", async (client) => {
+    const q = await client.query(
       `INSERT INTO orden_pagos (orden_id, monto, metodo)
        VALUES ($1, $2, $3)
        RETURNING *`,
       [ordenId, montoNum, String(metodo || "EFECTIVO")]
     );
 
-    await recalcularPagoEstado(ordenId);
+    await recalcularPagoEstado(ordenId, client);
 
-    return res.status(201).json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error registrando pago", detalle: e.message });
-  }
+    return { status: 201, body: q.rows[0] };
+  });
 });
 
 // =========================
@@ -1021,23 +1047,20 @@ router.post("/:id/cerrar", async (req, res) => {
   const ordenId = Number(req.params.id);
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
 
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const { total } = await recalcularTotales(ordenId);
-    await recalcularPagoEstado(ordenId);
+  return modificarOtAbierta(req, res, "Error cerrando OT", async (client) => {
+    const { total } = await recalcularTotales(ordenId, client);
+    await recalcularPagoEstado(ordenId, client);
 
     // 🔒 No se puede entregar el vehículo si el pago no está completo.
-    const pagado = await getPagado(ordenId);
+    const pagado = await getPagado(ordenId, client);
     if (total > 0 && pagado < total) {
       const falta = (total - pagado).toFixed(2);
-      return res.status(400).json({
+      return { status: 400, body: {
         error: `No se puede entregar: falta registrar el pago. Faltan $${falta} de $${total.toFixed(2)}.`,
-      });
+      } };
     }
 
-    const q = await pool.query(
+    const q = await client.query(
       `UPDATE ordenes_trabajo
        SET estado = 'ENTREGADO',
            closed_at = NOW()
@@ -1046,10 +1069,8 @@ router.post("/:id/cerrar", async (req, res) => {
       [ordenId]
     );
 
-    return res.json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error cerrando OT", detalle: e.message });
-  }
+    return { status: 200, body: q.rows[0] };
+  });
 });
 
 export default router;

@@ -651,7 +651,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final int? km    = kmRaw is int ? kmRaw : int.tryParse(kmRaw?.toString() ?? "");
     final eColor     = _estadoColor(estado);
     final entregado  = estado == "ENTREGADO";
-    final pagoPendiente = pagoEstado.toUpperCase().contains("PEND");
+    final pagoPendiente = (double.tryParse(total.toString()) ?? 0) > 0 &&
+        pagoEstado.toUpperCase().contains("PEND");
     // No se puede entregar el vehículo si aún falta cobrar (el backend
     // también lo bloquea, esto es solo para avisar antes de intentarlo).
     final puedeCerrar = !entregado && !pagoPendiente;
@@ -933,14 +934,14 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                 _card(child: Column(children: [
                   Row(children: [
                     Expanded(child: _actionBtn("Agregar servicio",
-                      Icons.build_circle_rounded, _showAddServicio)),
+                      Icons.build_circle_rounded, entregado ? null : _showAddServicio)),
                     const SizedBox(width: 10),
                     Expanded(child: _actionBtn("Agregar repuesto",
-                      Icons.settings_rounded, _showAddRepuesto)),
+                      Icons.settings_rounded, entregado ? null : _showAddRepuesto)),
                   ]),
                   const SizedBox(height: 10),
                   _actionBtn("Registrar pago",
-                    Icons.payments_rounded, _showPago, outline: true),
+                    Icons.payments_rounded, entregado ? null : _showPago, outline: true),
                 ])),
 
                 // ── Servicios ────────────────────────────────────────────

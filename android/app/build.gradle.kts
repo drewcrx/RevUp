@@ -38,6 +38,21 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = "RevUp"
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("local") {
+            dimension = "environment"
+            applicationIdSuffix = ".local"
+            versionNameSuffix = "-local"
+            manifestPlaceholders["appLabel"] = "RevUp Local"
+        }
+        create("production") {
+            dimension = "environment"
+            manifestPlaceholders["appLabel"] = "RevUp"
+        }
     }
 
     signingConfigs {
@@ -58,6 +73,16 @@ android {
             else
                 signingConfigs.getByName("debug")
         }
+    }
+}
+
+// La firma debug solo se admite en la app local. Producción exige su clave.
+gradle.taskGraph.whenReady {
+    if (!keystorePropertiesFile.exists() && allTasks.any {
+            it.path.startsWith(":app:") && it.name.contains("Production") &&
+                it.name.contains("Release")
+        }) {
+        throw GradleException("Producción requiere android/key.properties y su keystore. Usa --flavor local para pruebas.")
     }
 }
 

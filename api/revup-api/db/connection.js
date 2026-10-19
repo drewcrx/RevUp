@@ -1,4 +1,6 @@
+import '../config/env.js';
 import pg from "pg";
+import { readFile } from "node:fs/promises";
 
 export const pool = new pg.Pool({
   user:     process.env.PGUSER,
@@ -6,6 +8,8 @@ export const pool = new pg.Pool({
   host:     process.env.PGHOST     || "localhost",
   port:     Number(process.env.PGPORT) || 5432,
   database: process.env.PGDATABASE,
+  connectionTimeoutMillis: 5000,
+  query_timeout: 10000,
 });
 
 // ─── Datos semilla de catálogos ────────────────────────────────────────────
@@ -77,6 +81,8 @@ const REPUESTOS = [
 // esquema chicos y aditivos (columnas/tablas nuevas nullable) se aplican
 // aquí de forma idempotente al arrancar el servidor.
 export async function ensureSchema() {
+  const baseSchema = await readFile(new URL('./base_schema.sql', import.meta.url), 'utf8');
+  await pool.query(baseSchema);
   await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS avatar_b64 TEXT`);
 
   // Diagnóstico / notas generales de la OT (más allá de los síntomas del

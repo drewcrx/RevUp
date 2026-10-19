@@ -1,175 +1,73 @@
 # RevUp — Gestión de Taller Automotriz
 
-Aplicación web completa para la gestión digital de vehículos en talleres mecánicos. Permite registrar vehículos, crear órdenes de trabajo, gestionar repuestos y servicios, y generar reportes. Desplegada en VPS con Docker, Traefik y CI/CD automatizado.
+Repositorio: [drewcrx/RevUp](https://github.com/drewcrx/RevUp).
 
-## URLs de los servicios
+Aplicación Flutter para Android y web con API Node.js/Express, PostgreSQL,
+autenticación JWT y correo SMTP. Gestiona propietarios, vehículos, órdenes
+de trabajo, diagnósticos, servicios, repuestos, pagos, fotos, QR e historial.
 
-| Servicio | URL | Descripción |
-|---|---|---|
-| **Frontend** | https://revup.byronrm.com | Aplicación Flutter Web |
-| **Backend API** | https://backrevup.byronrm.com | API REST Node.js/Express |
-| **Portainer** | https://portainerrevup.byronrm.com | Gestión visual de contenedores |
-| **Adminer** | https://pgrevup.byronrm.com | Administrador gráfico PostgreSQL |
+## Entorno local validado
 
-## Stack tecnológico
+La aplicación funciona en un Android físico conectado a la misma red que
+una PC Windows. La PC ejecuta la API y una instancia PostgreSQL 16 nativa
+con datos persistentes. No requiere un VPS para este modo.
 
-- **Frontend**: Flutter Web → compilado a HTML/JS estático, servido por nginx
-- **Backend**: Node.js + Express → API REST con JWT
-- **Base de datos**: PostgreSQL 16
-- **Proxy inverso**: Traefik v3.3 → SSL automático con Let's Encrypt
-- **Gestión de contenedores**: Portainer CE
-- **Admin DB**: Adminer
-- **Infraestructura**: VPS Contabo Ubuntu 22.04 · `169.58.20.41`
-- **CI/CD**: GitHub Actions → GHCR → SSH deploy
+Desde esta carpeta:
 
-## Diagrama de arquitectura
+```powershell
+# Primera preparación
+npm ci --prefix api/revup-api
+flutter pub get
+.\tool\local.ps1 -Action Setup
 
-```mermaid
-graph TD
-    Internet(["🌐 Internet<br/>HTTPS"])
-
-    subgraph VPS["☁️ VPS Contabo · 169.58.20.41 · Ubuntu 22.04"]
-        direction TB
-
-        Traefik["⚡ Traefik v3.3<br/>Proxy Inverso<br/>:80 → :443 · Let's Encrypt SSL"]
-
-        subgraph proxy_net["Red: proxy"]
-            Frontend["🌐 Frontend<br/>Flutter Web · nginx:alpine<br/>revup.byronrm.com · :80"]
-            Backend["⚙️ Backend<br/>Node.js · Express API<br/>backrevup.byronrm.com · :3000"]
-            Portainer["🐳 Portainer CE<br/>Gestión Docker<br/>portainerrevup.byronrm.com · :9000"]
-            Adminer["🗄️ Adminer<br/>Admin PostgreSQL<br/>pgrevup.byronrm.com · :8080"]
-        end
-
-        subgraph backend_net["Red: backend"]
-            PostgreSQL[("🐘 PostgreSQL 16<br/>postgres:16-alpine<br/>:5432 · DB: revup")]
-        end
-    end
-
-    subgraph CICD["⚡ CI/CD · GitHub Actions"]
-        Push["git push → main"] --> BuildFlutter["flutter build web"]
-        BuildFlutter --> BuildImages["docker build<br/>frontend + backend"]
-        BuildImages --> GHCR["Push → GHCR<br/>ghcr.io/drewcrx/"]
-        GHCR --> Deploy["SSH → VPS<br/>docker compose up -d"]
-    end
-
-    Internet -->|HTTPS| Traefik
-    Traefik -->|revup.byronrm.com| Frontend
-    Traefik -->|backrevup.byronrm.com| Backend
-    Traefik -->|portainerrevup.byronrm.com| Portainer
-    Traefik -->|pgrevup.byronrm.com| Adminer
-    Backend -->|PGHOST=db :5432| PostgreSQL
-    Adminer -->|PGHOST=db :5432| PostgreSQL
+# Cada sesión
+.\tool\local.ps1 -Action Start
+.\tool\local.ps1 -Action Status
 ```
 
-### Redes Docker
+Consulta [LOCAL_ANDROID.md](LOCAL_ANDROID.md) para configurar la red y el
+firewall, generar e instalar la APK, localizar las credenciales iniciales y
+respaldar la base. El correo real requiere Internet.
 
-| Red | Servicios |
+Para detener los servicios conservando los datos:
+
+```powershell
+.\tool\local.ps1 -Action Stop
+```
+
+## Código y pruebas
+
+| Ruta | Contenido |
 |---|---|
-| `proxy` | Traefik, Frontend, Backend, Portainer, Adminer |
-| `backend` | Backend, Adminer, PostgreSQL |
+| `lib/` | Aplicación Flutter |
+| `api/revup-api/` | API, esquema PostgreSQL y pruebas del backend |
+| `tool/` | Lanzador local y herramientas de validación |
+| `test/` | Pruebas Flutter |
+| `config/production.example.json` | Ejemplo de configuración HTTPS de producción |
 
-PostgreSQL **no está expuesto** a la red `proxy` — solo accesible internamente desde Backend y Adminer.
-
-## Esquema de la base de datos
-
-| Tabla | Descripción |
-|---|---|
-| `usuarios` | Registro, login, verificación de correo, roles |
-| `vehiculos` | Vehículos registrados por mecánico |
-| `vehiculo_qr` | Tokens QR por vehículo |
-| `arreglos` | Historial de reparaciones por vehículo |
-| `ordenes_trabajo` | Órdenes de trabajo (OT) |
-| `orden_servicios` | Servicios facturados dentro de una OT |
-| `orden_repuestos` | Repuestos usados dentro de una OT |
-| `orden_pagos` | Pagos registrados en una OT |
-
-## CI/CD — GitHub Actions
-
-El pipeline se activa automáticamente en cada `push` a la rama `main`:
-
-```
-git push → main
-    │
-    ├── 1. flutter pub get + flutter build web --release
-    ├── 2. docker build frontend (nginx + build/web) → push ghcr.io/drewcrx/revup-frontend:latest
-    ├── 3. docker build backend (node:20-alpine)     → push ghcr.io/drewcrx/revup-backend:latest
-    └── 4. SSH al VPS → docker compose pull && docker compose up -d --remove-orphans
+```powershell
+flutter test
+npm test --prefix api/revup-api
+node tool/test-local-postgres.mjs
 ```
 
-### Secrets requeridos en GitHub
+El último comando requiere el entorno encendido y usa una base de validación
+aislada. Más detalles en [TESTING.md](TESTING.md).
 
-| Secret | Descripción |
-|---|---|
-| `VPS_HOST` | IP del VPS |
-| `VPS_USER` | Usuario SSH |
-| `VPS_PASSWORD` | Contraseña SSH del VPS |
+Las pruebas físicas de fotos, QR, PDF y recuperación de contraseña fueron
+confirmadas por el usuario el 19/10/2026. Los resultados automáticos están
+registrados en [LOCAL_ANDROID.md](LOCAL_ANDROID.md).
 
-## Primer despliegue manual
+## Producción
 
-```bash
-# 1. Instalar Docker en el VPS
-curl -fsSL https://get.docker.com | sh
+Las variantes Android `local` y `production` tienen configuración separada;
+producción exige HTTPS y firma de publicación. El repositorio incluye
+Docker, nginx y Traefik para preparar un futuro despliegue según
+[DEPLOY.md](DEPLOY.md).
 
-# 2. Clonar el repositorio
-git clone https://github.com/drewcrx/RevUp.git /opt/revup
-cd /opt/revup
+El workflow está en `.github/workflows/deploy.yml`. Los pushes a `main`
+y las pull requests ejecutan pruebas y compilan la web. Publicar imágenes
+y desplegar al VPS requiere una ejecución manual con `deploy` activado y
+la URL de producción configurada.
 
-# 3. Crear variables de entorno
-cp .env.example .env
-nano .env   # completar con valores reales
-
-# 4. Levantar todos los servicios
-docker compose up -d --build
-
-# 5. Verificar estado
-docker compose ps
-```
-
-## Variables de entorno (.env)
-
-```env
-ACME_EMAIL=tu@email.com       # Email para certificados Let's Encrypt
-
-PGUSER=usuario_db
-PGPASSWORD=contraseña_db
-PGDATABASE=revup
-
-JWT_SECRET=cadena_secreta_larga
-
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_SECURE=false
-MAIL_USER=tu@gmail.com
-MAIL_PASS=app_password_gmail
-```
-
-## Comandos útiles
-
-```bash
-# Ver estado de contenedores
-docker compose ps
-
-# Ver logs de un servicio
-docker compose logs backend -f --tail=50
-
-# Actualización manual
-docker compose pull && docker compose up -d --remove-orphans
-
-# Limpiar imágenes antiguas
-docker image prune -f
-```
-
-## Registros DNS
-
-4 registros tipo A en el proveedor DNS del dominio:
-
-```
-revup.byronrm.com          A  169.58.20.41
-backrevup.byronrm.com      A  169.58.20.41
-portainerrevup.byronrm.com A  169.58.20.41
-pgrevup.byronrm.com        A  169.58.20.41
-```
-
----
-
-Desarrollado por **Andrew Carrera**
+Desarrollado por **Andrew Carrera**.

@@ -1,6 +1,10 @@
 # Environment variables
 .env
 **/.env
+.env.*
+**/.env.*
+!.env.example
+!**/.env.example
 
 # Node dependencies (backend + any root tooling)
 node_modules/
@@ -43,6 +47,13 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+
+# Recursos locales para las pruebas Chrome en Windows (generados desde el SDK).
+/test/canvaskit/
+
+# Datos, credenciales, registros y configuración de la presentación local.
+/.local/
+/config/production.json
 
 # Symbolication related
 app.*.symbols

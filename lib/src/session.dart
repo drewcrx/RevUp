@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Session {
@@ -10,6 +11,31 @@ class Session {
 
   static Map<String, dynamic>? get user => _user;
   static String? get token => _token;
+  static final expirationEvents = ValueNotifier<int>(0);
+
+  static bool get hasValidSession {
+    if (_user == null || _token == null) return false;
+    try {
+      final parts = _token!.split('.');
+      if (parts.length != 3) return false;
+      final payload =
+          jsonDecode(
+                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+              )
+              as Map<String, dynamic>;
+      final exp = payload['exp'];
+      return exp is num && exp > DateTime.now().millisecondsSinceEpoch / 1000;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> expire(String rejectedToken) async {
+    // Una respuesta atrasada de la sesión anterior no cierra una nueva.
+    if (_token != rejectedToken) return;
+    await clear();
+    expirationEvents.value++;
+  }
 
   // =========================
   // Guardar usuario + token
@@ -49,8 +75,15 @@ class Session {
   }
 
   static Future<void> loadSession() async {
-    await loadUser();
-    await loadToken();
+    try {
+      await loadUser();
+      await loadToken();
+      if (!hasValidSession) await clear();
+    } on FormatException {
+      await clear();
+    } on TypeError {
+      await clear();
+    }
   }
 
   // =========================

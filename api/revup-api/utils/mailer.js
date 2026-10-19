@@ -15,6 +15,9 @@ export function buildTransporter() {
     host,
     port,
     secure,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
     auth: {
       user: process.env.MAIL_USER,
       pass: process.env.MAIL_PASS,
@@ -25,13 +28,9 @@ export function buildTransporter() {
 export async function sendMail({ to, subject, html, text }) {
   const transporter = buildTransporter();
 
-  // Si no configuras MAIL_HOST, no revienta: solo lo imprime
+  // No simular entregas ni escribir enlaces privados de activación en logs.
   if (!transporter) {
-    console.log("[MAIL DISABLED] To:", to);
-    console.log("[MAIL DISABLED] Subject:", subject);
-    console.log("[MAIL DISABLED] Text:", text);
-    console.log("[MAIL DISABLED] Html:", html);
-    return { skipped: true };
+    throw new Error('SMTP no configurado: no se pudo enviar el correo');
   }
 
   const fromName = process.env.MAIL_FROM_NAME || "RevUp";

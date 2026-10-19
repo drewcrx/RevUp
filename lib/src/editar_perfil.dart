@@ -10,7 +10,6 @@ const _kBlue     = Color(0xFF1E90FF);
 const _kBlueDark = Color(0xFF0A5FCC);
 const _kWhite    = Color(0xFFF0F4FF);
 const _kBg       = Color(0xFF04060D);
-const _kCard     = Color(0xFF080E1A);
 
 class EditarPerfilPage extends StatefulWidget {
   const EditarPerfilPage({super.key});

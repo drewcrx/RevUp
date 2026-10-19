@@ -61,25 +61,21 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   Future<void> _cargarCatalogos() async {
     setState(() => _cargandoCatalogos = true);
     try {
-      final marcasF        = ApiService.obtenerMarcas();
-      final coloresF       = ApiService.obtenerCatalogoItems('color');
-      final tiposF         = ApiService.obtenerCatalogoItems('tipo_vehiculo');
-      final combustiblesF  = ApiService.obtenerCatalogoItems('combustible');
-      final transmisionesF = ApiService.obtenerCatalogoItems('transmision');
-
-      final marcas        = await marcasF;
-      final colores        = await coloresF;
-      final tipos           = await tiposF;
-      final combustibles     = await combustiblesF;
-      final transmisiones    = await transmisionesF;
+      final catalogos = await Future.wait<dynamic>([
+        ApiService.obtenerMarcas(),
+        ApiService.obtenerCatalogoItems('color'),
+        ApiService.obtenerCatalogoItems('tipo_vehiculo'),
+        ApiService.obtenerCatalogoItems('combustible'),
+        ApiService.obtenerCatalogoItems('transmision'),
+      ]);
 
       if (!mounted) return;
       setState(() {
-        _marcasCat = marcas;
-        _coloresCat = colores;
-        _tiposCat = tipos;
-        _combustiblesCat = combustibles;
-        _transmisionesCat = transmisiones;
+        _marcasCat = catalogos[0] as List<Map<String, dynamic>>;
+        _coloresCat = catalogos[1] as List<String>;
+        _tiposCat = catalogos[2] as List<String>;
+        _combustiblesCat = catalogos[3] as List<String>;
+        _transmisionesCat = catalogos[4] as List<String>;
       });
     } catch (_) {
       // Si los catálogos no cargan, el usuario igual puede escribir todo
@@ -109,7 +105,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
       if (marcaId != null) {
         try {
           final modelos = await ApiService.obtenerModelos(marcaId as int);
-          if (!mounted) return;
+          if (!mounted || _marcaSeleccionada != v) return;
           setState(() => _modelosCat = modelos);
         } catch (_) {}
       }
@@ -255,72 +251,118 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   }
 
   Future<void> _guardar() async {
-    final marca        = marcaController.text.trim();
-    final modelo       = modeloController.text.trim();
-    final placa        = placaController.text.trim().toUpperCase();
-    final anioTxt      = anioController.text.trim();
-    final propietario  = propietarioController.text.trim();
-    final telefono     = telefonoController.text.trim();
-    final kilometraje  = kilometrajeController.text.trim();
+    if (_enviando) return;
+    final marca = marcaController.text.trim();
+    final modelo = modeloController.text.trim();
+    final placa = placaController.text.trim().toUpperCase();
+    final anioTxt = anioController.text.trim();
+    final propietario = propietarioController.text.trim();
+    final telefono = telefonoController.text.trim();
+    final kilometraje = kilometrajeController.text.trim();
     final ultimaVisita = ultimaVisitaController.text.trim();
-    final nota         = notaController.text.trim();
-    final cilindraje   = cilindrajeController.text.trim();
-    final anio         = int.tryParse(anioTxt);
+    final nota = notaController.text.trim();
+    final cilindraje = cilindrajeController.text.trim();
+    final anio = int.tryParse(anioTxt);
     final kilometrajeNum = int.tryParse(kilometraje);
 
-    if (marca.isEmpty || modelo.isEmpty || placa.isEmpty ||
-        _tipoVehiculoSeleccionado == null || anio == null ||
-        _colorSeleccionado == null || propietario.isEmpty ||
-        telefono.isEmpty || kilometraje.isEmpty || ultimaVisita.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Completa todos los campos obligatorios',
-          style: TextStyle(fontFamily: 'Ubuntu')),
-        backgroundColor: Colors.red.shade900,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+    if (marca.isEmpty ||
+        modelo.isEmpty ||
+        placa.isEmpty ||
+        _tipoVehiculoSeleccionado == null ||
+        anio == null ||
+        _colorSeleccionado == null ||
+        propietario.isEmpty ||
+        telefono.isEmpty ||
+        kilometraje.isEmpty ||
+        ultimaVisita.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Completa todos los campos obligatorios',
+            style: TextStyle(fontFamily: 'Ubuntu'),
+          ),
+          backgroundColor: Colors.red.shade900,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
       return;
     }
 
     if (kilometrajeNum == null || kilometrajeNum < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Ingresa un kilometraje válido',
-          style: TextStyle(fontFamily: 'Ubuntu')),
-        backgroundColor: Colors.red.shade900,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Ingresa un kilometraje válido',
+            style: TextStyle(fontFamily: 'Ubuntu'),
+          ),
+          backgroundColor: Colors.red.shade900,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
       return;
     }
 
     setState(() => _enviando = true);
 
-    final exito = await ApiService.agregarVehiculo(
-      marca: marca, modelo: modelo, placa: placa,
-      kilometraje: kilometraje, ultimaVisita: ultimaVisita,
-      anio: anio, color: _colorSeleccionado!,
-      propietarioId: _propietarioIdSeleccionado,
-      propietarioNombre: propietario, propietarioTelefono: telefono,
-      notaIngreso: nota.isEmpty ? null : nota,
-      tipoVehiculo: _tipoVehiculoSeleccionado!,
-      tipoCombustible: _combustibleSeleccionado,
-      transmision: _transmisionSeleccionada,
-      cilindraje: cilindraje.isEmpty ? null : cilindraje,
-    );
+    try {
+      final exito = await ApiService.agregarVehiculo(
+        marca: marca,
+        modelo: modelo,
+        placa: placa,
+        kilometraje: kilometraje,
+        ultimaVisita: ultimaVisita,
+        anio: anio,
+        color: _colorSeleccionado!,
+        propietarioId: _propietarioIdSeleccionado,
+        propietarioNombre: propietario,
+        propietarioTelefono: telefono,
+        notaIngreso: nota.isEmpty ? null : nota,
+        tipoVehiculo: _tipoVehiculoSeleccionado!,
+        tipoCombustible: _combustibleSeleccionado,
+        transmision: _transmisionSeleccionada,
+        cilindraje: cilindraje.isEmpty ? null : cilindraje,
+      );
 
-    if (!mounted) return;
-    setState(() => _enviando = false);
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        exito ? 'Vehículo agregado correctamente' : 'Error al guardar',
-        style: const TextStyle(fontFamily: 'Ubuntu')),
-      backgroundColor: exito ? _kBlueDark : Colors.red.shade900,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            exito ? 'Vehículo agregado correctamente' : 'Error al guardar',
+            style: const TextStyle(fontFamily: 'Ubuntu'),
+          ),
+          backgroundColor: exito ? _kBlueDark : Colors.red.shade900,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
 
-    if (exito) Navigator.pop(context);
+      if (exito) Navigator.pop(context);
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'El servidor tardó demasiado. Revisa si el vehículo se guardó antes de reintentar.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo guardar el vehículo: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
   // ═════════════════════════════════════════════════════════════════════════ //
 
