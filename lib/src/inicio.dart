@@ -83,6 +83,7 @@ class InicioPage extends StatefulWidget {
 
 class _InicioPageState extends State<InicioPage> {
   // ════════════════════════ LÓGICA ORIGINAL INTACTA ════════════════════════ //
+  int _serviciosVencidos=0,_stockBajo=0;
   bool loading = true;
   String error = "";
 
@@ -106,11 +107,21 @@ class _InicioPageState extends State<InicioPage> {
     final m = now.month.toString().padLeft(2, "0");
     month = "${now.year}-$m";
     _bootstrap();
-    _timer = Timer.periodic(const Duration(seconds: 20), (_) => _load(silent: true));
+    _timer = Timer.periodic(const Duration(seconds: 20), (_) {_load(silent: true);_cargarAvisos();});
+    _cargarAvisos();
   }
 
   @override
   void dispose() { _timer?.cancel(); super.dispose(); }
+
+  Future<void> _cargarAvisos() async {
+    try {
+      final results=await Future.wait([ApiService.taller('recordatorios'),ApiService.taller('inventario')]);
+      if(!mounted)return;
+      setState((){_serviciosVencidos=(results[0] as List).where((r)=>r['vencido']==true && r['completado']!=true).length;
+        _stockBajo=(results[1] as List).where((r)=>(r['existencias'] as num)<=(r['minimo'] as num)).length;});
+    } catch (_) {}
+  }
 
   Future<void> _bootstrap() async {
     try {
@@ -124,11 +135,7 @@ class _InicioPageState extends State<InicioPage> {
     }
   }
 
-  String _money(dynamic v) {
-    if (v == null) return "0.00";
-    final s = v.toString();
-    return s.isEmpty ? "0.00" : s;
-  }
+  String _money(dynamic v) => (double.tryParse('$v') ?? 0).toStringAsFixed(2);
 
   String _estadoUI(Map<String, dynamic> ot) {
     final e = (ot["estado_ui"] ?? ot["estado"] ?? "").toString().toUpperCase();
@@ -573,6 +580,11 @@ class _InicioPageState extends State<InicioPage> {
 
                             const SizedBox(height: 18),
 
+                            _glass(child:Wrap(spacing:12,runSpacing:8,children:[
+                              TextButton.icon(onPressed:()=>Navigator.pushNamed(context,'/recordatorios'),icon:Icon(Icons.notifications_outlined,color:_serviciosVencidos>0?kOrange:kBlue),label:Text('$_serviciosVencidos servicios pendientes')),
+                              TextButton.icon(onPressed:()=>Navigator.pushNamed(context,'/inventario'),icon:Icon(Icons.inventory_2_outlined,color:_stockBajo>0?kOrange:kBlue),label:Text('$_stockBajo repuestos en minimo')),
+                            ])),
+                            const SizedBox(height:14),
                             // ── Accesos rápidos (arriba, en fila pareja) ─────
                             _glass(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               _sectionTitle("Accesos rápidos", icon: Icons.rocket_launch_rounded),

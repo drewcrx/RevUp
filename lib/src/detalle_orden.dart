@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'api_service.dart';
+import 'ui_tools.dart';
+import 'orden_herramientas.dart';
 import 'inspeccion_danos.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
@@ -20,6 +22,9 @@ class DetalleOrdenPage extends StatefulWidget {
 
 class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   // ════════════════════════ LÓGICA ORIGINAL INTACTA ════════════════════════ //
+  bool _cerrando=false;
+  double get _abonado=>pagos.fold(0.0,(sum,p)=>sum+(double.tryParse('${p['monto']}') ?? 0));
+  double get _saldo=>((double.tryParse('${ot['total']}') ?? 0)-_abonado).clamp(0.0,double.infinity);
   bool   loading = true;
   String? error;
   Map<String, dynamic>? data;
@@ -166,7 +171,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   Future<void> _agregarActualizacion() async {
     final notaCtrl = TextEditingController();
 
-    await showDialog(
+    await showStableDialog(
       context: context,
       builder: (ctx) => _Dialog(
         title: "Nueva actualización",
@@ -242,7 +247,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   Future<void> _editarDiagnostico() async {
     final ctrl = TextEditingController(text: (ot['diagnostico'] ?? '').toString());
 
-    await showDialog(
+    await showStableDialog(
       context: context,
       builder: (ctx) => _Dialog(
         title: "Diagnóstico",
@@ -269,7 +274,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     final descCtrl  = TextEditingController();
     final precCtrl  = TextEditingController();
 
-    await showDialog(
+    await showStableDialog(
       context: context,
       builder: (ctx) => _Dialog(
         title: "Agregar servicio",
@@ -283,7 +288,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
         onCancel: () => Navigator.pop(ctx),
         onConfirm: () async {
           final desc  = descCtrl.text.trim();
-          final precio = double.tryParse(precCtrl.text.trim()) ?? 0;
+          final precio = parseImporte(precCtrl.text.trim());
+          if(precio==null) return;
           if (desc.isEmpty) { _snack("Ingresa una descripción", error: true); return; }
           try {
             await ApiService.agregarServicioOT(
@@ -381,22 +387,36 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   }
 
   Future<void> _showAddRepuesto() async {
+    int? inventarioId;
     final nomCtrl  = TextEditingController();
     final cantCtrl = TextEditingController(text: "1");
     final cosCtrl  = TextEditingController();
     final preCtrl  = TextEditingController();
 
-    await showDialog(
+    await showStableDialog(
       context: context,
       builder: (ctx) => _Dialog(
         title: "Agregar repuesto",
         icon: Icons.settings_rounded,
         content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextButton.icon(onPressed:() async {
+            try {
+              final rows=(await ApiService.taller('inventario') as List).cast<Map<String,dynamic>>();
+              if(!mounted)return;
+              final item=await showModalBottomSheet<Map<String,dynamic>>(context:context,builder:(ctx)=>SafeArea(child:ListView(children:[
+                const ListTile(title:Text('Usar existencias del inventario')),
+                if(rows.isEmpty)const ListTile(title:Text('Sin existencias registradas')),
+                for(final r in rows)ListTile(title:Text('${r['nombre']}'),subtitle:Text('${r['sku']} - ${r['existencias']} disponibles - ${dinero(r['precio'])}'),onTap:(r['existencias'] as num)>0?()=>Navigator.pop(ctx,r):null),
+              ])));
+              if(item!=null){inventarioId=item['id'] as int;nomCtrl.text='${item['nombre']}';cosCtrl.text='${item['costo']}';preCtrl.text='${item['precio']}';}
+            }catch(e){_snack('$e',error:true);}
+          },icon:const Icon(Icons.inventory_2_outlined),label:const Text('Usar inventario')),
+
           _dialogField(nomCtrl,  "Nombre del repuesto",      Icons.inventory_2_rounded,
             trailing: IconButton(
               icon: const Icon(Icons.list_alt_rounded, color: _kBlue, size: 20),
               tooltip: "Elegir del catálogo",
-              onPressed: () => _elegirRepuestoCatalogo(nomCtrl),
+              onPressed: () {inventarioId=null;_elegirRepuestoCatalogo(nomCtrl);},
             )),
           const SizedBox(height: 12),
           _dialogField(cantCtrl, "Cantidad",                 Icons.numbers_rounded,
@@ -411,15 +431,16 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
         onCancel: () => Navigator.pop(ctx),
         onConfirm: () async {
           final nombre   = nomCtrl.text.trim();
-          final cantidad = int.tryParse(cantCtrl.text.trim()) ?? 1;
-          final costo    = double.tryParse(cosCtrl.text.trim()) ?? 0;
-          final precio   = double.tryParse(preCtrl.text.trim()) ?? 0;
+          final cantidad = int.tryParse(cantCtrl.text.trim()) ?? 0;
+          final costo    = parseImporte(cosCtrl.text.trim());
+          final precio   = parseImporte(preCtrl.text.trim());
+          if(costo==null || precio==null) return;
           if (nombre.isEmpty)  { _snack("Ingresa el nombre del repuesto", error: true); return; }
           if (cantidad <= 0)   { _snack("Cantidad inválida", error: true); return; }
           try {
             await ApiService.agregarRepuestoOT(
               ordenId: widget.ordenId, nombre: nombre,
-              cantidad: cantidad, costoUnitario: costo, precioUnitario: precio);
+              cantidad: cantidad, costoUnitario: costo, precioUnitario: precio, inventarioId:inventarioId);
             if (!mounted) return;
             Navigator.pop(ctx);
             await _load();
@@ -432,10 +453,12 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
 
   // ── Diálogo: registrar pago ───────────────────────────────────────────────
   Future<void> _showPago() async {
-    final montoCtrl = TextEditingController();
+    final operacionId=nuevaOperacion();
+    final saldo=_saldo;
+    final montoCtrl = TextEditingController(text:saldo.toStringAsFixed(2));
     String metodo   = "EFECTIVO";
 
-    await showDialog(
+    await showStableDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx2, setS) => _Dialog(
@@ -472,11 +495,11 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
           ]),
           onCancel: () => Navigator.pop(ctx),
           onConfirm: () async {
-            final monto = double.tryParse(montoCtrl.text.trim()) ?? 0;
-            if (monto <= 0) { _snack("Monto inválido", error: true); return; }
+            final monto = parseImporte(montoCtrl.text.trim());
+            if (monto==null || monto <= 0 || (monto*100).round()>(saldo*100).round()) { _snack("Monto inválido", error: true); return; }
             try {
               await ApiService.registrarPagoOT(
-                ordenId: widget.ordenId, monto: monto, metodo: metodo);
+                ordenId: widget.ordenId, monto: monto, metodo: metodo, operacionId:operacionId);
               if (!mounted) return;
               Navigator.pop(ctx);
               await _load();
@@ -490,6 +513,11 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
 
   // ── Cerrar OT ─────────────────────────────────────────────────────────────
   Future<void> _cerrarOT() async {
+    if(_cerrando) return;
+    if(!await confirmar(context,'Confirmar entrega',
+      'Vehiculo: ${ot['placa']}\nTotal: ${dinero(ot['total'])}\nAbonado: ${dinero(_abonado)}\nSaldo: ${dinero(_saldo)}\n\nEl diagnostico y los documentos de ingreso quedaran cerrados. Las correcciones se registraran como anotaciones.',action:'Entregar vehiculo')) return;
+    if(!mounted) return;
+    setState(()=>_cerrando=true);
     try {
       await ApiService.cerrarOT(widget.ordenId);
       if (!mounted) return;
@@ -498,7 +526,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     } catch (e) {
       if (!mounted) return;
       _snack(e.toString(), error: true);
-    }
+    } finally {if(mounted) setState(()=>_cerrando=false);}
   }
   // ═════════════════════════════════════════════════════════════════════════ //
 
@@ -516,9 +544,17 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   Widget _dialogField(TextEditingController ctrl, String label, IconData icon,
       {TextInputType keyboard = TextInputType.text, int maxLines = 1,
        Widget? trailing, ValueChanged<String>? onChanged}) =>
-      TextField(
+      TextFormField(
         controller: ctrl,
-        keyboardType: keyboard,
+        validator:(value) {
+          if(keyboard==TextInputType.number) {
+            if(label=='Cantidad') return (int.tryParse(value ?? '') ?? 0)>0?null:'Ingresa una cantidad entera positiva';
+            final importe=parseImporte(value ?? '');
+            return importe==null?'Usa un importe valido, por ejemplo 12,50':label=='Monto' && (importe<=0 || (importe*100).round()>(_saldo*100).round())?'El monto debe ser positivo y no superar el saldo':null;
+          }
+          return null;
+        },
+        keyboardType: keyboard==TextInputType.number && label!='Cantidad'?const TextInputType.numberWithOptions(decimal:true):keyboard,
         maxLines: maxLines,
         onChanged: onChanged,
         style: const TextStyle(fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
@@ -589,6 +625,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
     switch (e.toUpperCase()) {
       case 'RECIBIDO':    return _kBlueGlow;
       case 'PENDIENTE':   return Colors.orangeAccent;
+      case 'LISTO': return Colors.lightGreenAccent;
       case 'ENTREGADO':   return Colors.greenAccent;
       default:            return _kWhite;
     }
@@ -598,6 +635,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   // chip de estado de pago (que también puede decir "PENDIENTE").
   String _estadoLabel(String e) {
     switch (e.toUpperCase()) {
+      case 'LISTO': return 'LISTO PARA RETIRAR';
       case 'PENDIENTE': return 'EN PROCESO';
       default:          return e;
     }
@@ -639,7 +677,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
   @override
   Widget build(BuildContext context) {
     final placa      = (ot['placa']      ?? '').toString();
-    final estado     = (ot['estado']     ?? '').toString().toUpperCase();
+    final estado = ot['estado']=='ENTREGADO'?'ENTREGADO':ot['fase']=='LISTO'?'LISTO':(ot['estado'] ?? '').toString().toUpperCase();
     final pagoEstado = (ot['pago_estado'] ?? '').toString();
     final symptoms   = (ot['symptoms']   ?? '').toString();
     final diagnostico = (ot['diagnostico'] ?? '').toString();
@@ -655,10 +693,10 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
         pagoEstado.toUpperCase().contains("PEND");
     // No se puede entregar el vehículo si aún falta cobrar (el backend
     // también lo bloquea, esto es solo para avisar antes de intentarlo).
-    final puedeCerrar = !entregado && !pagoPendiente;
+    final puedeCerrar = !entregado && !pagoPendiente && !_cerrando;
 
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu',
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu',
         textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
@@ -841,6 +879,8 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       fontSize: 13, height: 1.5)),
                 ])),
 
+                OrdenHerramientas(data:data!,onChanged:_load),
+                const SizedBox(height:12),
                 // ── Fotos ─────────────────────────────────────────────────
                 _card(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -861,7 +901,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                     IconButton(
                       icon: Icon(Icons.edit_rounded, color: _kBlue.withOpacity(0.7), size: 18),
                       tooltip: "Editar diagnóstico",
-                      onPressed: _editarDiagnostico,
+                      onPressed: entregado ? null : _editarDiagnostico,
                       visualDensity: VisualDensity.compact,
                     ),
                   ]),
@@ -917,7 +957,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                     IconButton(
                       icon: Icon(Icons.add_circle_outline_rounded, color: _kBlue.withOpacity(0.85), size: 20),
                       tooltip: "Agregar actualización",
-                      onPressed: _agregarActualizacion,
+                      onPressed: entregado ? null : _agregarActualizacion,
                       visualDensity: VisualDensity.compact,
                     ),
                   ]),
@@ -941,7 +981,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                   ]),
                   const SizedBox(height: 10),
                   _actionBtn("Registrar pago",
-                    Icons.payments_rounded, entregado ? null : _showPago, outline: true),
+                    Icons.payments_rounded, entregado || _saldo<=0 ? null : _showPago, outline: true),
                 ])),
 
                 // ── Servicios ────────────────────────────────────────────
@@ -1022,6 +1062,12 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                       fontFamily: 'Ubuntu', color: _kBlue,
                       fontWeight: FontWeight.w900, fontSize: 20)),
                   ]),
+                  const SizedBox(height:10),
+                  Wrap(spacing:20,runSpacing:8,children:[
+                    Text('Abonado: ${dinero(_abonado)}',style:const TextStyle(color:Colors.greenAccent,fontSize:13)),
+                    Text('Saldo: ${dinero(_saldo)}',style:const TextStyle(color:Colors.orangeAccent,fontWeight:FontWeight.bold,fontSize:14)),
+                  ]),
+                  if(!entregado && _saldo>0)TextButton.icon(onPressed:_showPago,icon:const Icon(Icons.payments_outlined,size:18),label:const Text('Cobrar saldo')),
                 ])),
 
                 // ── Aviso si falta cobrar ───────────────────────────────
@@ -1203,7 +1249,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                 ),
                 if (fotoId != null)
                   Positioned(right: 3, top: 3, child: GestureDetector(
-                    onTap: () => _eliminarFoto(fotoId),
+                    onTap: ot['estado']=='ENTREGADO'?null:() => _eliminarFoto(fotoId),
                     child: Container(
                       padding: const EdgeInsets.all(3),
                       decoration: const BoxDecoration(
@@ -1272,7 +1318,7 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
                   ),
                   if (fotoId != null)
                     Positioned(right: 2, top: 2, child: GestureDetector(
-                      onTap: () => _eliminarFotoActualizacion(fotoId),
+                      onTap: ot['estado']=='ENTREGADO'?null:() => _eliminarFotoActualizacion(fotoId),
                       child: Container(
                         padding: const EdgeInsets.all(2),
                         decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
@@ -1299,77 +1345,30 @@ class _DetalleOrdenPageState extends State<DetalleOrdenPage> {
 }
 
 // ─── Diálogo reutilizable RevUp ───────────────────────────────────────────────
-class _Dialog extends StatelessWidget {
-  final String   title;
+class _Dialog extends StatefulWidget {
+  final String title;
   final IconData icon;
-  final Widget   content;
+  final Widget content;
   final VoidCallback onCancel;
-  final VoidCallback onConfirm;
-
-  const _Dialog({
-    required this.title, required this.icon,
-    required this.content,
-    required this.onCancel, required this.onConfirm,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0D1420),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: _kBlue.withOpacity(0.18))),
-        child: Column(mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Título
-          Row(children: [
-            Icon(icon, color: _kBlue, size: 18),
-            const SizedBox(width: 8),
-            Text(title, style: const TextStyle(
-              fontFamily: 'Ubuntu', color: _kWhite,
-              fontWeight: FontWeight.w700, fontSize: 15)),
-          ]),
-          Divider(height: 20, color: _kBlue.withOpacity(0.10)),
-          // Contenido
-          content,
-          const SizedBox(height: 20),
-          // Botones
-          Row(children: [
-            Expanded(child: GestureDetector(
-              onTap: onCancel,
-              child: Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _kBlue.withOpacity(0.25)),
-                  color: _kBlue.withOpacity(0.05)),
-                child: Center(child: Text("Cancelar", style: TextStyle(
-                  fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.50),
-                  fontWeight: FontWeight.w600, fontSize: 13))),
-              ),
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: GestureDetector(
-              onTap: onConfirm,
-              child: Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2AA0FF), _kBlueDark]),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [BoxShadow(color: _kBlue.withOpacity(0.28),
-                    blurRadius: 8, offset: const Offset(0, 3))]),
-                child: const Center(child: Text("Guardar", style: TextStyle(
-                  fontFamily: 'Ubuntu', color: Colors.white,
-                  fontWeight: FontWeight.w700, fontSize: 13))),
-              ),
-            )),
-          ]),
-        ]),
-      ),
-    );
-  }
+  final Future<void> Function() onConfirm;
+  const _Dialog({required this.title,required this.icon,required this.content,required this.onCancel,required this.onConfirm});
+  @override State<_Dialog> createState()=>_DialogState();
+}
+class _DialogState extends State<_Dialog> {
+  final _form=GlobalKey<FormState>();
+  bool _saving=false;
+  @override Widget build(BuildContext context)=>PopScope(canPop:!_saving,child:Dialog(
+    backgroundColor:const Color(0xFF0D1420),
+    child:SingleChildScrollView(padding:const EdgeInsets.all(22),child:Form(key:_form,child:Column(
+      mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Row(children:[Icon(widget.icon,color:_kBlue,size:20),const SizedBox(width:8),Expanded(child:Text(widget.title,style:const TextStyle(color:_kWhite,fontWeight:FontWeight.w700,fontSize:15)))]),
+        const SizedBox(height:18),AbsorbPointer(absorbing:_saving,child:widget.content),const SizedBox(height:20),
+        Row(children:[Expanded(child:TextButton(onPressed:_saving?null:widget.onCancel,child:const Text('Cancelar'))),const SizedBox(width:8),Expanded(child:FilledButton(
+          onPressed:_saving?null:() async {
+            if(!_form.currentState!.validate()) return;
+            setState(()=>_saving=true);
+            try {await widget.onConfirm();} finally {if(mounted) setState(()=>_saving=false);}
+          },child:_saving?const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)):const Text('Guardar')))]),
+      ]))),
+  ));
 }

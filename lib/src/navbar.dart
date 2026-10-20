@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'session.dart';
+import 'estado_servidor.dart';
 import 'login_page.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
@@ -98,18 +99,7 @@ class _NavbarState extends State<Navbar> {
                                 fontWeight: FontWeight.w800, fontSize: 28,
                               ))),
                       ),
-                      // Indicador de estado online
-                      Positioned(
-                        right: 2, bottom: 2,
-                        child: Container(
-                          width: 14, height: 14,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.greenAccent,
-                            border: Border.all(color: _kBg, width: 2),
-                          ),
-                        ),
-                      ),
+
                     ],
                   ),
 
@@ -163,6 +153,9 @@ class _NavbarState extends State<Navbar> {
                 child: ListView(
                   padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                   children: [
+                    const EstadoServidor(),
+                    _navItem(context, Icons.inventory_2_outlined, 'Inventario', '/inventario'),
+                    _navItem(context, Icons.notifications_outlined, 'Recordatorios', '/recordatorios'),
                     _navItem(context, Icons.dashboard_rounded,     "Inicio",         "/inicio"),
                     _navItem(context, Icons.person_rounded,         "Perfil",         "/perfil"),
                     _navItem(context, Icons.directions_car_rounded, "Vehículos",      "/vehiculos"),

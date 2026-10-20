@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'api_service.dart';
+import 'inspeccion_vehiculo.dart';
+import 'vehiculo_3d.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
 const _kBlueDark = Color(0xFF0A5FCC);
 const _kWhite    = Color(0xFFF0F4FF);
 const _kBg       = Color(0xFF04060D);
-const _kCard     = Color(0xFF080E1A);
 const _kDano     = Colors.orangeAccent;
 
-// ─── Catálogo de vistas y zonas (fijo — el esquema es siempre el mismo auto) ──
-class _Zona {
-  final String nombre;
-  final double x; // posición normalizada 0..1 dentro del esquema
-  final double y;
-  const _Zona(this.nombre, this.x, this.y);
-}
-
+// ─── Catálogo de vistas ───────────────────────────────────────────────────────
 const Map<String, String> kVistaLabel = {
   'frontal': 'Frontal',
   'posterior': 'Posterior',
@@ -34,132 +28,6 @@ const Map<String, IconData> kVistaIcon = {
   'superior': Icons.arrow_circle_up_rounded,
 };
 
-const Map<String, List<_Zona>> _zonasPorVista = {
-  'frontal': [
-    _Zona('Parabrisas', 0.5, 0.16),
-    _Zona('Faro izquierdo', 0.18, 0.55),
-    _Zona('Faro derecho', 0.82, 0.55),
-    _Zona('Capó', 0.5, 0.42),
-    _Zona('Rejilla', 0.5, 0.68),
-    _Zona('Parachoques delantero', 0.5, 0.87),
-    _Zona('Placa delantera', 0.5, 0.97),
-  ],
-  'posterior': [
-    _Zona('Luneta', 0.5, 0.16),
-    _Zona('Stop izquierdo', 0.18, 0.55),
-    _Zona('Stop derecho', 0.82, 0.55),
-    _Zona('Baúl / compuerta', 0.5, 0.42),
-    _Zona('Parachoques posterior', 0.5, 0.87),
-    _Zona('Placa posterior', 0.5, 0.97),
-  ],
-  'lateral_izquierdo': [
-    _Zona('Techo', 0.5, 0.10),
-    _Zona('Espejo', 0.24, 0.24),
-    _Zona('Guardafango delantero', 0.13, 0.55),
-    _Zona('Puerta delantera', 0.35, 0.55),
-    _Zona('Puerta posterior', 0.63, 0.55),
-    _Zona('Guardafango posterior', 0.87, 0.55),
-    _Zona('Llanta delantera', 0.22, 0.92),
-    _Zona('Llanta posterior', 0.78, 0.92),
-  ],
-  'lateral_derecho': [
-    _Zona('Techo', 0.5, 0.10),
-    _Zona('Espejo', 0.76, 0.24),
-    _Zona('Guardafango delantero', 0.87, 0.55),
-    _Zona('Puerta delantera', 0.65, 0.55),
-    _Zona('Puerta posterior', 0.37, 0.55),
-    _Zona('Guardafango posterior', 0.13, 0.55),
-    _Zona('Llanta delantera', 0.78, 0.92),
-    _Zona('Llanta posterior', 0.22, 0.92),
-  ],
-  'superior': [
-    _Zona('Capó', 0.5, 0.14),
-    _Zona('Parabrisas', 0.5, 0.29),
-    _Zona('Techo', 0.5, 0.5),
-    _Zona('Luneta', 0.5, 0.71),
-    _Zona('Baúl', 0.5, 0.86),
-  ],
-};
-
-// ─── Esquema del vehículo (dibujado, sin depender de imágenes externas) ───────
-class _CochePainter extends CustomPainter {
-  final String vista;
-  _CochePainter(this.vista);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final linea = Paint()
-      ..color = _kBlue.withOpacity(0.55)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final relleno = Paint()..color = _kBlue.withOpacity(0.06);
-
-    switch (vista) {
-      case 'frontal':
-      case 'posterior':
-        final body = RRect.fromRectAndRadius(
-          Rect.fromLTWH(w * 0.10, h * 0.35, w * 0.80, h * 0.55),
-          const Radius.circular(18));
-        canvas.drawRRect(body, relleno);
-        canvas.drawRRect(body, linea);
-        final parabrisas = Path()
-          ..moveTo(w * 0.28, h * 0.35)
-          ..lineTo(w * 0.38, h * 0.06)
-          ..lineTo(w * 0.62, h * 0.06)
-          ..lineTo(w * 0.72, h * 0.35)
-          ..close();
-        canvas.drawPath(parabrisas, relleno);
-        canvas.drawPath(parabrisas, linea);
-        for (final dx in [0.20, 0.80]) {
-          canvas.drawRRect(
-            RRect.fromRectAndRadius(
-              Rect.fromCenter(center: Offset(w * dx, h * 0.55), width: w * 0.12, height: h * 0.10),
-              const Radius.circular(6)),
-            linea);
-        }
-        break;
-
-      case 'lateral_izquierdo':
-      case 'lateral_derecho':
-        final body = Path()
-          ..moveTo(w * 0.06, h * 0.62)
-          ..quadraticBezierTo(w * 0.04, h * 0.40, w * 0.20, h * 0.38)
-          ..lineTo(w * 0.30, h * 0.16)
-          ..quadraticBezierTo(w * 0.35, h * 0.06, w * 0.50, h * 0.06)
-          ..lineTo(w * 0.62, h * 0.06)
-          ..quadraticBezierTo(w * 0.72, h * 0.08, w * 0.76, h * 0.20)
-          ..lineTo(w * 0.80, h * 0.38)
-          ..quadraticBezierTo(w * 0.96, h * 0.40, w * 0.94, h * 0.62)
-          ..lineTo(w * 0.94, h * 0.70)
-          ..lineTo(w * 0.06, h * 0.70)
-          ..close();
-        canvas.drawPath(body, relleno);
-        canvas.drawPath(body, linea);
-        for (final dx in [0.22, 0.78]) {
-          canvas.drawCircle(Offset(w * dx, h * 0.80), w * 0.09,
-            Paint()..color = _kBg);
-          canvas.drawCircle(Offset(w * dx, h * 0.80), w * 0.09, linea);
-        }
-        break;
-
-      case 'superior':
-        final body = RRect.fromRectAndRadius(
-          Rect.fromLTWH(w * 0.20, h * 0.06, w * 0.60, h * 0.88),
-          const Radius.circular(28));
-        canvas.drawRRect(body, relleno);
-        canvas.drawRRect(body, linea);
-        canvas.drawLine(Offset(w * 0.22, h * 0.24), Offset(w * 0.78, h * 0.24), linea);
-        canvas.drawLine(Offset(w * 0.22, h * 0.76), Offset(w * 0.78, h * 0.76), linea);
-        break;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CochePainter oldDelegate) => oldDelegate.vista != vista;
-}
-
-// ─── Pantalla principal ────────────────────────────────────────────────────────
 class InspeccionDanosPage extends StatefulWidget {
   final int ordenId;
   final String placa;
@@ -176,6 +44,9 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
   List<String> estadoOpciones = [];
   List<String> reparacionOpciones = [];
 
+  String _carroceria='Sedan';
+  bool _entregada=false;
+  bool get _editable=>!(_entregada && tipoActual=='ingreso');
   String vistaActual = 'frontal';
   String tipoActual = 'ingreso'; // 'ingreso' | 'entrega'
 
@@ -191,6 +62,8 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
       final reparaciones = await ApiService.obtenerCatalogoItems('tipo_reparacion');
       if (!mounted) return;
       setState(() {
+        _carroceria='${(detalle['vehiculo'] as Map?)?['tipo_vehiculo'] ?? 'Sedan'}';
+        _entregada=(detalle['ot'] as Map?)?['estado']=='ENTREGADO';
         danos = (detalle['danos'] as List? ?? []).cast<Map<String, dynamic>>();
         estadoOpciones = estados;
         reparacionOpciones = reparaciones;
@@ -222,10 +95,10 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
 
   @override
   Widget build(BuildContext context) {
-    final zonas = _zonasPorVista[vistaActual]!;
+    final zonas = zonasVehiculo[vistaActual]!;
 
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu',
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu',
         textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
@@ -248,7 +121,8 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
             onPressed: () => Navigator.pop(context),
           ),
           title: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text("INSPECCIÓN DE DAÑOS", style: TextStyle(
+            const Text("INSPECCIÓN DE DAÑOS", maxLines: 1,
+              overflow: TextOverflow.ellipsis, style: TextStyle(
               fontFamily: 'Ubuntu', color: _kWhite,
               fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.5)),
             Text(widget.placa, style: TextStyle(fontFamily: 'Ubuntu',
@@ -256,6 +130,10 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
           ]),
           centerTitle: true,
           actions: [
+            IconButton(tooltip:'Visor 3D giratorio',icon:const Icon(Icons.threed_rotation_rounded,color:_kBlue),onPressed:() async {
+              final pieza=await Navigator.push<Pieza3D>(context,MaterialPageRoute(builder:(_)=>Vehiculo3DPage(tipoVehiculo:_carroceria,danos:danos.where((d)=>_tipoDe(d)==tipoActual).toList())));
+              if(pieza!=null && mounted){setState(()=>vistaActual=pieza.vista);await _abrirZona(pieza.zona);}
+            }),
             IconButton(
               icon: const Icon(Icons.refresh_rounded, color: _kBlue, size: 20),
               tooltip: "Refrescar",
@@ -361,52 +239,15 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
 
                 const SizedBox(height: 14),
 
-                // ── Esquema con zonas tocables ──────────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _kCard,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _kBlue.withOpacity(0.14)),
-                  ),
-                  child: AspectRatio(
-                    aspectRatio: 1.15,
-                    child: LayoutBuilder(
-                      builder: (ctx, cons) => Stack(children: [
-                        Positioned.fill(child: CustomPaint(painter: _CochePainter(vistaActual))),
-                        ...zonas.map((z) {
-                          final n = _danosDeZona(z.nombre).length;
-                          return Positioned(
-                            left: cons.maxWidth * z.x - 16,
-                            top: cons.maxHeight * z.y - 16,
-                            child: GestureDetector(
-                              onTap: () => _abrirZona(z.nombre),
-                              child: Container(
-                                width: 32, height: 32,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: (n > 0 ? _kDano : _kBlue).withOpacity(0.18),
-                                  border: Border.all(
-                                    color: n > 0 ? _kDano : _kBlue, width: 1.5),
-                                ),
-                                child: Center(child: n > 0
-                                    ? Text("$n", style: const TextStyle(fontFamily: 'Ubuntu',
-                                        color: _kDano, fontWeight: FontWeight.w800, fontSize: 13))
-                                    : Icon(Icons.add_rounded, color: _kBlue.withOpacity(0.7), size: 16)),
-                              ),
-                            ),
-                          );
-                        }),
-                      ]),
-                    ),
-                  ),
+                MapaVehiculoInspeccion(
+                  vista: vistaActual,
+                  nombreVista: kVistaLabel[vistaActual]!,
+                  danosPorZona: {
+                    for (final zona in zonas)
+                      zona.nombre: _danosDeZona(zona.nombre).length,
+                  },
+                  onZonaTap: _abrirZona,
                 ),
-
-                const SizedBox(height: 8),
-                Text("Toca una zona para registrar o revisar un daño",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Ubuntu',
-                    color: _kWhite.withOpacity(0.30), fontSize: 11)),
 
                 const SizedBox(height: 18),
 
@@ -465,9 +306,10 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(icon, size: 14, color: activo ? _kBlue : _kWhite.withOpacity(0.4)),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(fontFamily: 'Ubuntu',
+          Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontFamily: 'Ubuntu',
             color: activo ? _kWhite : _kWhite.withOpacity(0.45),
-            fontWeight: activo ? FontWeight.w700 : FontWeight.w500, fontSize: 12)),
+            fontWeight: activo ? FontWeight.w700 : FontWeight.w500, fontSize: 12))),
           if (n > 0) ...[
             const SizedBox(width: 5),
             Container(
@@ -573,7 +415,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity, height: 46,
-                  child: GestureDetector(
+                  child: !_editable?const Center(child:Text('Recepcion cerrada. Consulta las anotaciones de la orden.',style:TextStyle(color:Colors.orangeAccent,fontSize:12))):GestureDetector(
                     onTap: () async {
                       Navigator.pop(ctx2);
                       await _formularioDano(zona);
@@ -622,7 +464,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
               fontWeight: FontWeight.w700, fontSize: 12))),
           IconButton(
             icon: Icon(Icons.delete_outline_rounded, color: Colors.redAccent.withOpacity(0.7), size: 18),
-            onPressed: danoId == null ? null : () async {
+            onPressed: danoId == null || _entregada ? null : () async {
               try {
                 await ApiService.eliminarDano(danoId);
                 onChanged();
@@ -653,7 +495,7 @@ class _InspeccionDanosPageState extends State<InspeccionDanosPage> {
           ),
         const SizedBox(height: 6),
         GestureDetector(
-          onTap: danoId == null ? null : () async {
+          onTap: danoId == null || !_editable ? null : () async {
             await _agregarFotosDano(danoId);
             onChanged();
           },

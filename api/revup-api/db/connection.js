@@ -213,6 +213,8 @@ export async function ensureSchema() {
   `);
   await pool.query(`ALTER TABLE vehiculos ADD COLUMN IF NOT EXISTS propietario_id INTEGER REFERENCES propietarios(id)`);
 
+  const workshopSchema = await readFile(new URL('./workshop_schema.sql', import.meta.url), 'utf8');
+  await pool.query(workshopSchema);
   await seedCatalogos();
   await backfillPropietarios();
 }

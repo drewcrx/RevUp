@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
+import 'ui_tools.dart';
 import 'inspeccion_danos.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   @override
   void initState() {
     super.initState();
+    for(final c in [_placa,_symptoms,_km]){c.addListener((){if(mounted)setState((){});});}
     _cargarSintomasComunes();
     if (_placaBloqueada) {
       _placa.text = widget.placaInicial!.trim().toUpperCase();
@@ -78,7 +80,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
         if (!mounted) return;
         setState(() {
           _cargandoKm = false;
-          if (v != null && v.kilometraje > 0) _kmVehiculo = v.kilometraje;
+          if (v != null && v.kilometraje > 0) {_kmVehiculo = v.kilometraje;_km.text='${v.kilometraje}';}
         });
       }).catchError((_) {
         if (mounted) setState(() => _cargandoKm = false);
@@ -107,7 +109,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   Future<void> _crear() async {
     final placa    = _placa.text.trim().toUpperCase();
     final symptoms = _symptoms.text.trim();
-    final km       = _kmVehiculo ?? int.tryParse(_km.text.trim());
+    final km       = int.tryParse(_km.text.trim());
 
     if (placa.isEmpty || symptoms.isEmpty || km == null || km <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -120,6 +122,10 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
       return;
     }
 
+    if(_kmVehiculo!=null && km<_kmVehiculo!) {
+      if(!await confirmar(context,'Revisar kilometraje','El registro anterior es $_kmVehiculo km y esta visita indica $km km. El registro general no se reducira. Confirma si es correcto.'))return;
+      if(!mounted)return;
+    }
     setState(() => loading = true);
     try {
       final ot = await ApiService.crearOrden(placa: placa, symptoms: symptoms, kilometraje: km);
@@ -155,9 +161,10 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
   late Animation<Offset>  _slideAnim;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ProtegerFormulario(tieneCambios:()=>_symptoms.text.trim().isNotEmpty || _km.text.trim().isNotEmpty,guardando:loading,child:_buildPage(context));
+  Widget _buildPage(BuildContext context) {
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu',
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu',
         textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
@@ -179,7 +186,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _kBlue, size: 20),
-            onPressed: loading ? null : () => Navigator.pop(context),
+            onPressed: loading ? null : () => Navigator.maybePop(context),
           ),
           title: Row(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 6, height: 6,
@@ -340,26 +347,6 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
                           fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.35), fontSize: 13)),
                       ]),
                     )
-                  else if (_kmVehiculo != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-                      decoration: BoxDecoration(
-                        color: _kBlue.withOpacity(0.06),
-                        borderRadius: BorderRadius.circular(11),
-                        border: Border.all(color: _kBlue.withOpacity(0.22))),
-                      child: Row(children: [
-                        Icon(Icons.speed_rounded, color: _kBlue.withOpacity(0.75), size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text("${_kmVehiculo!.toString().replaceAllMapped(
-                              RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} km",
-                            style: const TextStyle(fontFamily: 'Ubuntu',
-                              color: _kWhite, fontSize: 15, fontWeight: FontWeight.w800)),
-                          Text("Según el registro del vehículo", style: TextStyle(
-                            fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.32), fontSize: 11)),
-                        ])),
-                      ]),
-                    )
                   else ...[
                     TextField(
                       controller: _km,
@@ -387,7 +374,7 @@ class _NuevaOrdenPageState extends State<NuevaOrdenPage>
                       Icon(Icons.info_outline_rounded, color: _kWhite.withOpacity(0.22), size: 12),
                       const SizedBox(width: 5),
                       Expanded(child: Text(
-                        "Este vehículo no tiene kilometraje registrado — ingrésalo aquí",
+                        _kmVehiculo==null?'Ingresa el kilometraje de esta visita':'Ultimo registro: $_kmVehiculo km. Confirma o actualiza el valor.',
                         style: TextStyle(fontFamily: 'Ubuntu',
                           color: _kWhite.withOpacity(0.25), fontSize: 11))),
                     ]),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'api_service.dart';
+import 'ui_tools.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
 const _kBlue     = Color(0xFF1E90FF);
@@ -55,6 +56,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   @override
   void initState() {
     super.initState();
+    for(final c in [placaController,marcaController,modeloController,kilometrajeController,propietarioController,telefonoController,notaController]){c.addListener((){if(mounted)setState((){});});}
     _cargarCatalogos();
   }
 
@@ -508,9 +510,10 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ProtegerFormulario(tieneCambios:()=>[placaController,marcaController,modeloController,kilometrajeController,propietarioController,telefonoController,notaController].any((c)=>c.text.trim().isNotEmpty),guardando:_enviando,child:_buildPage(context));
+  Widget _buildPage(BuildContext context) {
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu',
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu',
         textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
@@ -532,7 +535,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
           ),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _kBlue, size: 20),
-            onPressed: _enviando ? null : () => Navigator.pop(context),
+            onPressed: _enviando ? null : () => Navigator.maybePop(context),
           ),
           title: Row(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 6, height: 6,
@@ -667,7 +670,7 @@ class _AgregarVehiculoPageState extends State<AgregarVehiculoPage> {
               Row(children: [
                 // Cancelar
                 Expanded(child: GestureDetector(
-                  onTap: _enviando ? null : () => Navigator.pop(context),
+                  onTap: _enviando ? null : () => Navigator.maybePop(context),
                   child: Container(
                     height: 50,
                     decoration: BoxDecoration(

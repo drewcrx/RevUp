@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'vehiculo_model.dart';
 import 'api_service.dart';
+import 'archivo_vehiculos.dart';
 import 'detalle_vehiculo.dart';
 import 'nueva_orden.dart';
 
@@ -249,7 +250,7 @@ class _VehiculosPageState extends State<VehiculosPage> {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
 
@@ -285,6 +286,7 @@ class _VehiculosPageState extends State<VehiculosPage> {
           ]),
           centerTitle: true,
           actions: [
+            IconButton(tooltip:'Vehiculos archivados',icon:const Icon(Icons.inventory_2_outlined,color:_kBlue),onPressed:() async {await Navigator.push(context,MaterialPageRoute(builder:(_)=>const ArchivoVehiculosPage()));if(mounted)await _refrescarLista();}),
             IconButton(
               icon: const Icon(Icons.refresh_rounded, color: _kBlue, size: 22),
               tooltip: "Refrescar",
@@ -561,12 +563,12 @@ class _VehiculoItem extends StatelessWidget {
                         Row(children: [
                           const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 20),
                           const SizedBox(width: 8),
-                          const Text("Confirmar eliminación", style: TextStyle(
+                          const Text("Retirar vehiculo", style: TextStyle(
                             fontFamily: 'Ubuntu', color: _kWhite,
                             fontWeight: FontWeight.w700, fontSize: 15)),
                         ]),
                         const SizedBox(height: 12),
-                        Text("¿Seguro que deseas eliminar este vehículo?",
+                        Text("Si tiene ordenes o movimientos se archivara y conservara su historial. Solo se elimina definitivamente si no tiene movimientos.",
                           style: TextStyle(fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.55), fontSize: 13)),
                         const SizedBox(height: 22),
                         Row(mainAxisAlignment: MainAxisAlignment.end, children: [
@@ -585,7 +587,7 @@ class _VehiculoItem extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(color: Colors.redAccent.withOpacity(0.40)),
                               ),
-                              child: const Text("Eliminar", style: TextStyle(
+                              child: const Text("Retirar", style: TextStyle(
                                 fontFamily: 'Ubuntu', color: Colors.redAccent,
                                 fontWeight: FontWeight.w700, fontSize: 13)),
                             ),
@@ -601,7 +603,7 @@ class _VehiculoItem extends StatelessWidget {
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text(
-                      exito ? "Vehículo eliminado correctamente" : "Error al eliminar",
+                      exito ? "Vehiculo retirado. El historial existente se conserva" : "Error al eliminar",
                       style: const TextStyle(fontFamily: 'Ubuntu'),
                     ),
                     backgroundColor: exito ? _kBlueDark : Colors.red.shade900,
@@ -618,7 +620,7 @@ class _VehiculoItem extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.redAccent.withOpacity(0.22)),
                 ),
-                child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
+                child: const Icon(Icons.archive_outlined, color: Colors.redAccent, size: 16),
               ),
             ),
           ]),

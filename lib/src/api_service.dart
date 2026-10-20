@@ -9,6 +9,7 @@ import 'vehiculo_model.dart';
 import 'session.dart';
 import 'session_client.dart';
 import 'app_config.dart';
+import 'ui_tools.dart';
 
 class ApiService {
   static final String baseUrl = AppConfig.current.apiBaseUrl;
@@ -761,6 +762,7 @@ class ApiService {
     required int cantidad,
     required double costoUnitario,
     required double precioUnitario,
+    int? inventarioId,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/repuestos");
 
@@ -773,6 +775,7 @@ class ApiService {
             "cantidad": cantidad,
             "costoUnitario": costoUnitario,
             "precioUnitario": precioUnitario,
+            if(inventarioId != null) "inventarioId": inventarioId,
           }),
         )
         .timeout(const Duration(seconds: 10));
@@ -789,6 +792,7 @@ class ApiService {
     required int ordenId,
     required double monto,
     required String metodo,
+    String? operacionId,
   }) async {
     final url = Uri.parse("$baseUrl/ordenes/$ordenId/pagos");
 
@@ -796,7 +800,7 @@ class ApiService {
         .post(
           url,
           headers: _headersAuth(),
-          body: jsonEncode({"monto": monto, "metodo": metodo}),
+          body: jsonEncode({"monto": monto, "metodo": metodo, "operacionId": operacionId ?? nuevaOperacion()}),
         )
         .timeout(const Duration(seconds: 10));
 
@@ -1269,4 +1273,22 @@ class ApiService {
 
     throw _httpError(res, "Error obteniendo OTs por placa");
   }
+  static Future<dynamic> taller(String path,{String method='GET',Map<String,dynamic>? body}) async {
+    final uri=Uri.parse('$baseUrl/taller/$path');
+    final request=http.Request(method,uri)..headers.addAll(_headersAuth());
+    if(body!=null) request.body=jsonEncode(body);
+    final response=await http.Response.fromStream(await client.send(request));
+    if(response.statusCode>=200 && response.statusCode<300) return jsonDecode(response.body);
+    throw _httpError(response,'No se pudo completar la operacion');
+  }
+  static Future<List<Vehiculo>> obtenerVehiculosArchivados() async {
+    final response=await client.get(Uri.parse('$baseUrl/vehiculos?archivados=solo'),headers:_headersAuth());
+    if(response.statusCode!=200) throw _httpError(response,'No se pudieron consultar los archivados');
+    return (jsonDecode(response.body) as List).map((e)=>Vehiculo.fromMap(Map<String,dynamic>.from(e))).toList();
+  }
+  static Future<void> restaurarVehiculo(String placa) async {
+    final response=await client.put(Uri.parse('$baseUrl/vehiculos/${Uri.encodeComponent(placa)}/archivo'),headers:_headersAuth(),body:jsonEncode({'archivado':false}));
+    if(response.statusCode!=200) throw _httpError(response,'No se pudo restaurar el vehiculo');
+  }
+
 }

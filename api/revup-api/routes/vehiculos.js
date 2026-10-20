@@ -196,7 +196,8 @@ router.get("/qr/:token/ots", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const params = [];
-    let where = "WHERE 1=1";
+    let where = req.query.archivados === 'solo' ? 'WHERE v.archivado=true'
+      : req.query.archivados === 'todos' ? 'WHERE 1=1' : 'WHERE v.archivado=false';
 
     if (!isSuper(req)) {
       params.push(req.user.id);
@@ -374,34 +375,31 @@ router.post("/", async (req, res) => {
 // ===========================
 // DELETE VEHÍCULO POR PLACA (privado)
 // ===========================
-router.delete("/:placa", async (req, res) => {
-  const placa = String(req.params.placa || "").trim().toUpperCase();
-  if (!placa) return res.status(400).json({ error: "placa inválida" });
-
+router.delete('/:placa', async (req,res)=>{
+  const placa=String(req.params.placa || '').trim().toUpperCase();
+  const client=await pool.connect();
   try {
-    const params = [placa];
-    let extra = "";
-
-    if (!isSuper(req)) {
-      params.push(req.user.id);
-      extra = " AND mechanic_id = $2";
-    }
-
-    const result = await pool.query(
-      `DELETE FROM vehiculos
-       WHERE placa = $1
-       ${extra}`,
-      params
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Vehículo no encontrado" });
-    }
-
-    res.json({ mensaje: "Vehículo eliminado correctamente" });
-  } catch (error) {
-    res.status(500).json({ error: "Error al eliminar vehículo", detalle: error.message });
-  }
+    await client.query('BEGIN');
+    const q=await client.query(`SELECT * FROM vehiculos WHERE placa=$1 AND ($2::text='superuser' OR mechanic_id=$3) FOR UPDATE`,[placa,req.user.role,req.user.id]);
+    if (!q.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({error:'Vehiculo no encontrado'}); }
+    const history=await client.query(`SELECT (EXISTS(SELECT 1 FROM ordenes_trabajo WHERE placa=$1)
+      OR EXISTS(SELECT 1 FROM recordatorios WHERE vehiculo_id=$2)
+      OR EXISTS(SELECT 1 FROM arreglos WHERE vehiculo_placa=$1)) AS tiene`,[placa,q.rows[0].id]);
+    const archivado=history.rows[0].tiene;
+    if (archivado) await client.query('UPDATE vehiculos SET archivado=true WHERE id=$1',[q.rows[0].id]);
+    else await client.query('DELETE FROM vehiculos WHERE id=$1',[q.rows[0].id]);
+    await client.query('COMMIT');
+    res.json({archivado,mensaje:archivado?'Vehiculo archivado. Su historial se conserva.':'Vehiculo sin movimientos eliminado'});
+  } catch (e) { await client.query('ROLLBACK'); res.status(500).json({error:'No se pudo retirar el vehiculo'}); }
+  finally {client.release();}
+});
+router.put('/:placa/archivo',async(req,res)=>{
+  if (typeof req.body.archivado !== 'boolean') return res.status(400).json({error:'archivado debe ser booleano'});
+  const q=await pool.query(`UPDATE vehiculos SET archivado=$1 WHERE placa=$2
+    AND ($3::text='superuser' OR mechanic_id=$4) RETURNING id,archivado`,
+    [req.body.archivado,String(req.params.placa).trim().toUpperCase(),req.user.role,req.user.id]);
+  if (!q.rowCount) return res.status(404).json({error:'Vehiculo no encontrado'});
+  res.json(q.rows[0]);
 });
 
 // ===========================

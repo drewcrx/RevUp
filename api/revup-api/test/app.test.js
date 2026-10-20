@@ -165,7 +165,7 @@ test('cargos, saldo, pago y entrega mantienen sus totales y bloquean cambios pos
   assert.equal(delivered.data.pago_estado, 'PAGADO');
   for (const user of [mechanic, admin]) {
     assert.equal((await post('servicios', { descripcion: 'Extra', precio: 5 }, user)).status, 409);
-    assert.equal((await post('repuestos', { nombre: 'Extra', precioUnitario: 5 }, user)).status, 409);
+    assert.equal((await post('repuestos', { nombre: 'Extra', costoUnitario: 0, precioUnitario: 5 }, user)).status, 409);
     assert.equal((await post('pagos', { monto: 5 }, user)).status, 409);
     assert.equal((await post('cerrar', undefined, user)).status, 409);
   }
@@ -187,7 +187,7 @@ test('un mecánico no puede alterar ni consultar la OT de otro', async () => {
   assert.equal((await request(`/ordenes/${id}`, { user: other })).status, 404);
   for (const [suffix, body] of [
     ['servicios', { descripcion: 'Extra', precio: 5 }],
-    ['repuestos', { nombre: 'Extra', precioUnitario: 5 }],
+    ['repuestos', { nombre: 'Extra', costoUnitario: 0, precioUnitario: 5 }],
     ['pagos', { monto: 5 }], ['cerrar', undefined],
   ]) {
     assert.equal((await request(`/ordenes/${id}/${suffix}`, { user: other, method: 'POST', body })).status, 404);
@@ -295,4 +295,110 @@ test('entrega y cargo simultáneos nunca dejan una OT entregada con deuda', asyn
     assert.equal(Number(detail.data.ot.total), 5);
     assert.equal(detail.data.ot.pago_estado, 'PENDIENTE');
   }
+});
+
+test('importes con coma se conservan y se rechazan importes ambiguos y meses imposibles', async () => {
+  const id=await createOt();
+  assert.equal((await request(`/ordenes/${id}/servicios`,{method:'POST',body:{descripcion:'Decimal',precio:'12,50'}})).status,201);
+  assert.equal(Number((await request(`/ordenes/${id}`)).data.ot.total),12.5);
+  for(const precio of ['NaN','Infinity','12,345','1,234.56',null,-1]) {
+    assert.equal((await request(`/ordenes/${id}/servicios`,{method:'POST',body:{descripcion:'Invalido',precio}})).status,400);
+  }
+  assert.equal((await request('/reportes/mi-resumen?month=2026-13')).status,400);
+  assert.equal((await request('/reportes/mi-resumen?month=2026-00')).status,400);
+});
+
+test('los pagos repetidos se reproducen sin duplicar y el saldo nunca admite sobrecobro',async()=>{
+  const id=await createOt(),base=`/ordenes/${id}`;
+  await request(base+'/servicios',{method:'POST',body:{descripcion:'Trabajo',precio:100}});
+  const pay=(key,monto=25)=>request(base+'/pagos',{method:'POST',body:{monto,metodo:'EFECTIVO',operacionId:key}});
+  const key='payment-idempotent-000001';
+  const first=await pay(key),again=await pay(key);
+  assert.equal(first.status,201);assert.equal(again.data.id,first.data.id);
+  assert.equal((await pay(key,26)).status,409);
+  const parallel=await Promise.all([pay('payment-distinct-000002',50),pay('payment-distinct-000003',50)]);
+  assert.deepEqual(parallel.map(r=>r.status).sort(),[201,409]);
+  const detail=await request(base);
+  assert.equal(detail.data.pagos.length,2);
+  assert.equal(detail.data.pagos.reduce((sum,p)=>sum+Number(p.monto),0),75);
+  await pay('payment-distinct-000004',25);
+  assert.equal((await request(base+'/cerrar',{method:'POST'})).status,200);
+  assert.equal((await pay(key)).data.id,first.data.id);
+});
+
+test('archivar conserva pagos e historial, impide nuevas visitas y permite restaurar',async()=>{
+  const vehicle=await request('/vehiculos',{method:'POST',body:{marca:'Toyota',modelo:'Yaris',placa:'ARCH-001',kilometraje:10}});
+  assert.equal(vehicle.status,200);
+  const created=await request('/ordenes',{method:'POST',body:{placa:'ARCH-001',symptoms:'Revision',kilometraje:20}});
+  const id=created.data.id;
+  await request(`/ordenes/${id}/servicios`,{method:'POST',body:{descripcion:'Revision',precio:5}});
+  await request(`/ordenes/${id}/pagos`,{method:'POST',body:{monto:5}});
+  const removed=await request('/vehiculos/ARCH-001',{method:'DELETE'});
+  assert.equal(removed.data.archivado,true);
+  assert.equal((await request(`/ordenes/${id}`)).data.pagos.length,1);
+  assert.ok(!(await request('/vehiculos')).data.some(v=>v.placa==='ARCH-001'));
+  assert.ok((await request('/vehiculos?archivados=solo')).data.some(v=>v.placa==='ARCH-001'));
+  assert.equal((await request('/ordenes',{method:'POST',body:{placa:'ARCH-001',symptoms:'Otra visita'}})).status,404);
+  assert.equal((await request('/vehiculos/ARCH-001/archivo',{user:other,method:'PUT',body:{archivado:false}})).status,404);
+  assert.equal((await request('/vehiculos/ARCH-001/archivo',{method:'PUT',body:{archivado:false}})).status,200);
+  assert.ok((await request('/vehiculos')).data.some(v=>v.placa==='ARCH-001'));
+});
+
+test('etapas independientes, listas de revision y documentos cerrados conservan trazabilidad',async()=>{
+  const id=await createOt(),base=`/ordenes/${id}`,tools=`/taller/ordenes/${id}`;
+  await request(base+'/servicios',{method:'POST',body:{descripcion:'Sin costo',precio:0}});
+  assert.equal((await request(base)).data.ot.fase,'RECIBIDO');
+  assert.equal((await request(tools+'/etapa',{method:'PUT',body:{fase:'LISTO'}})).data.fase,'LISTO');
+  const checklist={combustible:50,accesorios:'Llave',observaciones:'Revisado',revision_danos:'SIN_DANOS',revisado:true};
+  assert.equal((await request(tools+'/checklist/ingreso',{method:'PUT',body:checklist})).status,200);
+  assert.equal((await request(tools+'/checklist/ingreso',{user:other,method:'PUT',body:checklist})).status,404);
+  await request(base+'/diagnostico',{method:'PUT',body:{diagnostico:'Original'}});
+  assert.equal((await request(base+'/cerrar',{method:'POST'})).status,200);
+  assert.equal((await request(base+'/diagnostico',{method:'PUT',body:{diagnostico:'Cambio'}})).status,409);
+  assert.equal((await request(base+'/danos',{method:'POST',body:{vista:'frontal',zona:'Capó',tipo:'ingreso'}})).status,409);
+  assert.equal((await request(tools+'/checklist/ingreso',{method:'PUT',body:checklist})).status,409);
+  assert.equal((await request(base+'/danos',{method:'POST',body:{vista:'frontal',zona:'Capó',tipo:'entrega'}})).status,201);
+  assert.equal((await request(tools+'/anotaciones',{method:'POST',body:{texto:'Correccion fechada'}})).status,200);
+  const detail=await request(base);
+  assert.equal(detail.data.ot.diagnostico,'Original');
+  assert.ok(detail.data.anotaciones.some(n=>n.texto==='Correccion fechada' && n.autor==='mecanico'));
+  assert.equal((await request(tools+'/checklist/entrega',{method:'PUT',body:checklist})).status,409);
+});
+
+test('inventario descuenta piezas atomicamente y registra movimientos sin existencias negativas',async()=>{
+  const item=await request('/taller/inventario',{method:'POST',body:{nombre:'Filtro auditado',sku:'STOCK-001',existencias:5,minimo:2,costo:3,precio:7}});
+  assert.equal(item.status,200);
+  const stock=item.data;
+  assert.ok(!(await request('/taller/inventario',{user:other})).data.some(i=>i.id===stock.id));
+  const id1=await createOt(),id2=await createOt();
+  const charge=id=>request(`/ordenes/${id}/repuestos`,{method:'POST',body:{nombre:'Filtro auditado',cantidad:4,costoUnitario:0,precioUnitario:7,inventarioId:stock.id}});
+  const results=await Promise.all([charge(id1),charge(id2)]);
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);
+  assert.equal((await request('/taller/inventario')).data.find(i=>i.id===stock.id).existencias,1);
+  const successful=results[0].status===201?id1:id2;
+  assert.equal(Number((await request(`/ordenes/${successful}`)).data.repuestos[0].costo_unitario),3);
+  const movement={cantidad:2,motivo:'Reposicion',operacionId:'stock-adjustment-000001'};
+  const first=await request(`/taller/inventario/${stock.id}/movimientos`,{method:'POST',body:movement});
+  const second=await request(`/taller/inventario/${stock.id}/movimientos`,{method:'POST',body:movement});
+  assert.equal(first.data.id,second.data.id);
+  assert.equal((await request('/taller/inventario')).data.find(i=>i.id===stock.id).existencias,3);
+  assert.equal((await request(`/taller/inventario/${stock.id}/movimientos`,{user:other,method:'POST',body:{...movement,operacionId:'stock-adjustment-000002'}})).status,404);
+  const edit={nombre:'Filtro actualizado',sku:'STOCK-001',minimo:1,costo:4,precio:8};
+  assert.equal((await request(`/taller/inventario/${stock.id}`,{user:other,method:'PUT',body:edit})).status,404);
+  const updated=await request(`/taller/inventario/${stock.id}`,{method:'PUT',body:edit});
+  assert.equal(updated.status,200);assert.equal(updated.data.existencias,3);
+  assert.equal(Number((await request(`/ordenes/${successful}`)).data.repuestos[0].costo_unitario),3);
+});
+
+test('recordatorios validan fecha y kilometraje y respetan el propietario del registro',async()=>{
+  const created=await request('/taller/recordatorios',{method:'POST',body:{placa:'TEST-001',titulo:'Proximo aceite',fecha:'2020-01-01',kilometraje:100}});
+  assert.equal(created.status,200);
+  const list=await request('/taller/recordatorios');
+  assert.equal(list.data.find(r=>r.id===created.data.id).vencido,true);
+  assert.ok(!(await request('/taller/recordatorios',{user:other})).data.some(r=>r.id===created.data.id));
+  assert.equal((await request('/taller/recordatorios',{method:'POST',body:{placa:'TEST-001',titulo:'Fecha invalida',fecha:'2026-02-31'}})).status,400);
+  assert.equal((await request('/taller/recordatorios',{method:'POST',body:{placa:'TEST-001',titulo:'Sin umbral'}})).status,400);
+  assert.equal((await request(`/taller/recordatorios/${created.data.id}`,{user:other,method:'PUT',body:{completado:true}})).status,404);
+  assert.equal((await request(`/taller/recordatorios/${created.data.id}`,{method:'PUT',body:{completado:true}})).data.completado,true);
+  assert.equal((await request('/taller/recordatorios')).data.find(r=>r.id===created.data.id).vencido,false);
 });

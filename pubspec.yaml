@@ -4,7 +4,7 @@ publish_to: 'none'
 
 animate_do: ^4.2.0
 
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.9.2
@@ -66,6 +66,7 @@ flutter:
     - assets/images/RevUp.png
     - assets/images/RevUp2.png
     - assets/images/RevUp_icon.png
+    - assets/images/inspeccion/
 
   fonts:
     - family: BBH_Sans_Bartle

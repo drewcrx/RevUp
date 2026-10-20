@@ -9,6 +9,7 @@ import reportesRoutes from "./routes/reportes.js";
 import publicoRoutes from "./routes/publico.js";
 import catalogosRoutes from "./routes/catalogos.js";
 import propietariosRoutes from "./routes/propietarios.js";
+import tallerRoutes from './routes/taller.js';
 import { pool } from "./db/connection.js";
 
 const app = express();
@@ -39,5 +40,6 @@ app.use("/usuarios", usuariosRouter);
 app.use("/v", publicoRoutes);
 app.use("/catalogos", catalogosRoutes);
 app.use("/propietarios", propietariosRoutes);
+app.use('/taller', tallerRoutes);
 
 export default app;

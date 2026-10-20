@@ -19,6 +19,7 @@ const kBorder = "rgba(30,144,255,0.18)";
 
 function estadoInfo(estadoUi) {
   switch (estadoUi) {
+    case 'LISTO': return {label:'LISTO PARA RETIRAR',color:'#B2FF59'};
     case "ENTREGADO": return { label: "ENTREGADO", color: "#66BB6A" };
     case "PENDIENTE": return { label: "EN PROCESO", color: "#FFA726" };
     case "RECIBIDO":  return { label: "RECIBIDO",   color: "#00BFFF" };
@@ -348,6 +349,9 @@ router.get("/:token", async (req, res) => {
          ot.kilometraje_ot, ot.created_at, ot.closed_at, u.nombre AS mechanic_nombre,
          CASE
            WHEN ot.estado = 'ENTREGADO' THEN 'ENTREGADO'
+          WHEN ot.fase = 'LISTO' THEN 'LISTO'
+          WHEN ot.fase = 'RECIBIDO' THEN 'RECIBIDO'
+          WHEN ot.fase = 'EN_PROCESO' THEN 'PENDIENTE'
            WHEN ot.estado = 'RECIBIDO'
                 AND (COALESCE(ot.total_servicios,0) > 0
                      OR COALESCE(ot.total_repuestos,0) > 0
@@ -437,7 +441,11 @@ router.get("/:token", async (req, res) => {
           for (const a of list) a.fotos = fotosPorAct[a.id] || [];
         }
       }
-      for (const o of ots) o.actualizaciones = actualizacionesPorOrden[o.id] || [];
+      const notes=await pool.query(`SELECT a.id,a.orden_id,a.texto AS nota,a.created_at,u.nombre AS autor
+        FROM orden_anotaciones a JOIN usuarios u ON u.id=a.autor_id
+        WHERE a.orden_id=ANY($1::int[]) AND a.clase='NOTA' ORDER BY a.created_at ASC`,[ids]);
+      for(const n of notes.rows)(actualizacionesPorOrden[n.orden_id]??=[]).push({...n,nota:`${n.autor}: ${n.nota}`,fotos:[]});
+      for (const o of ots) o.actualizaciones = (actualizacionesPorOrden[o.id] || []).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     }
 
     return res.send(renderVehiculo(v, ots));

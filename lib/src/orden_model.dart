@@ -8,6 +8,9 @@ class OrdenTrabajo {
   final double totalServicios;
   final double totalRepuestos;
   final double total;
+  final double pagado;
+  final String propietario;
+  double get saldo=>(total-pagado).clamp(0.0,double.infinity);
   final DateTime createdAt;
 
   // Datos agregados a la OT despues de la primera version de este modelo.
@@ -26,6 +29,8 @@ class OrdenTrabajo {
     required this.totalServicios,
     required this.totalRepuestos,
     required this.total,
+    this.pagado=0,
+    this.propietario='',
     required this.createdAt,
     this.diagnostico,
     this.mechanicNombre,
@@ -43,11 +48,13 @@ class OrdenTrabajo {
       placa: (m['placa'] ?? '').toString(),
       mechanicId: int.tryParse((m['mechanic_id'] ?? '').toString()) ?? 0,
       symptoms: (m['symptoms'] ?? '').toString(),
-      estado: (m['estado'] ?? '').toString(),
+      estado: m['estado']=='ENTREGADO'?'ENTREGADO':m['fase']=='LISTO'?'LISTO':m['fase']=='EN_PROCESO'?'PENDIENTE':m['fase']=='RECIBIDO'?'RECIBIDO':(m['estado_ui'] ?? m['estado'] ?? '').toString(),
       pagoEstado: (m['pago_estado'] ?? '').toString(),
       totalServicios: double.tryParse((m['total_servicios'] ?? 0).toString()) ?? 0,
       totalRepuestos: double.tryParse((m['total_repuestos'] ?? 0).toString()) ?? 0,
       total: double.tryParse((m['total'] ?? 0).toString()) ?? 0,
+      pagado:double.tryParse('${m['pagado'] ?? 0}') ?? 0,
+      propietario:'${m['propietario_nombre'] ?? ''}',
       // El backend manda las fechas en UTC (con sufijo Z); sin .toLocal()
       // Dart deja el DateTime marcado como UTC y day/month/hour devuelven
       // los valores UTC crudos, no la hora real de Ecuador.

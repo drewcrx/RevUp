@@ -1,5 +1,6 @@
 // routes/ordenes.js (COMPLETO) — OT privadas por mecánico + superuser ve todo
 import express from "express";
+import { money, cents } from "../utils/money.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -131,13 +132,7 @@ function subirDanoFotosMiddleware(req, res, next) {
 }
 
 // Verifica que el daño exista y que el usuario tenga acceso a la OT dueña
-async function getDanoIfAllowed(danoId, user) {
-  const d = await pool.query(`SELECT * FROM orden_danos WHERE id = $1`, [danoId]);
-  if (d.rowCount === 0) return null;
-  const ot = await getOtIfAllowed(d.rows[0].orden_id, user);
-  if (!ot) return null;
-  return d.rows[0];
-}
+
 
 // =========================
 // Actualizaciones de la OT — foto(s) + nota mientras se trabaja el auto
@@ -178,13 +173,7 @@ function subirActualizacionFotosMiddleware(req, res, next) {
 }
 
 // Verifica que la actualización exista y que el usuario tenga acceso a la OT dueña
-async function getActualizacionIfAllowed(actId, user) {
-  const a = await pool.query(`SELECT * FROM orden_actualizaciones WHERE id = $1`, [actId]);
-  if (a.rowCount === 0) return null;
-  const ot = await getOtIfAllowed(a.rows[0].orden_id, user);
-  if (!ot) return null;
-  return a.rows[0];
-}
+
 
 // =========================
 // Helpers
@@ -285,7 +274,7 @@ async function getOtIfAllowed(ordenId, user) {
 
 // Serializa cargos, pagos y entrega sobre la misma fila. La validación del
 // estado y el cambio financiero se confirman juntos o se revierten juntos.
-async function modificarOtAbierta(req, res, mensajeError, operation) {
+async function modificarOtAbierta(req, res, mensajeError, operation, replay) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -299,11 +288,21 @@ async function modificarOtAbierta(req, res, mensajeError, operation) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'OT no encontrada' });
     }
+    if (replay) {
+      const previous = await replay(client, found.rows[0]);
+      if (previous) {
+        await client.query(previous.status >= 400 ? 'ROLLBACK' : 'COMMIT');
+        return res.status(previous.status).json(previous.body);
+      }
+    }
     if (found.rows[0].estado === 'ENTREGADO') {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'La OT ya fue entregada y no admite cambios financieros' });
     }
     const result = await operation(client, found.rows[0]);
+    if (result.status < 400) await client.query(
+      'INSERT INTO orden_anotaciones (orden_id, autor_id, clase, texto) VALUES ($1,$2,$3,$4)',
+      [Number(req.params.id), req.user.id, 'EVENTO', req.auditText || ({servicios:'Servicio agregado',repuestos:'Repuesto agregado',cerrar:'Vehículo entregado',diagnostico:'Diagnóstico actualizado'}[req.route.path.split('/').at(-1)] || 'Orden actualizada')]);
     await client.query(result.status >= 400 ? 'ROLLBACK' : 'COMMIT');
     return res.status(result.status).json(result.body);
   } catch (e) {
@@ -353,7 +352,7 @@ router.post("/", async (req, res) => {
     const filtro = req.user.role === 'superuser' ? '' : ' AND mechanic_id = $2';
     if (filtro) params.push(mechanicId);
     const vehiculo = await client.query(
-      `SELECT id, kilometraje FROM vehiculos WHERE placa = $1 ${filtro} FOR UPDATE`, params,
+      `SELECT id, kilometraje FROM vehiculos WHERE placa = $1 AND archivado = false ${filtro} FOR UPDATE`, params,
     );
     if (!vehiculo.rowCount) {
       await client.query('ROLLBACK');
@@ -432,8 +431,10 @@ router.get("/", async (req, res) => {
       SELECT
         ot.id, ot.placa, ot.mechanic_id, ot.usuario_id, ot.symptoms,
         ot.diagnostico, u.nombre AS mechanic_nombre,
+        (SELECT p.nombre FROM vehiculos v LEFT JOIN propietarios p ON p.id=v.propietario_id WHERE v.placa=ot.placa) AS propietario_nombre,
         ot.estado, ot.pago_estado,
-        ot.total_servicios, ot.total_repuestos, ot.total,
+        ot.total_servicios, ot.total_repuestos, ot.total, ot.fase,
+        (SELECT COALESCE(SUM(monto),0) FROM orden_pagos WHERE orden_id=ot.id) AS pagado,
         ot.kilometraje_ot,
         ot.created_at, ot.closed_at,
         COALESCE(act.actualizaciones_count, 0) AS actualizaciones_count,
@@ -441,6 +442,9 @@ router.get("/", async (req, res) => {
         -- Estado lógico para UI
         CASE
           WHEN ot.estado = 'ENTREGADO' THEN 'ENTREGADO'
+          WHEN ot.fase = 'LISTO' THEN 'LISTO'
+          WHEN ot.fase = 'RECIBIDO' THEN 'RECIBIDO'
+          WHEN ot.fase = 'EN_PROCESO' THEN 'PENDIENTE'
           WHEN ot.estado = 'RECIBIDO'
                AND (COALESCE(ot.total_servicios,0) > 0
                     OR COALESCE(ot.total_repuestos,0) > 0
@@ -554,8 +558,15 @@ router.get("/:id", async (req, res) => {
       }
     }
 
+    const metadata = await pool.query(`SELECT v.marca, v.modelo, v.tipo_vehiculo, v.anio,
+      p.nombre AS propietario_nombre, p.telefono AS propietario_telefono, p.email AS propietario_email,
+      q.qr_token FROM vehiculos v LEFT JOIN propietarios p ON p.id=v.propietario_id
+      LEFT JOIN vehiculo_qr q ON q.vehiculo_id=v.id AND q.activo=true WHERE v.placa=$1`, [ot.placa]);
+    const checklists = await pool.query('SELECT * FROM orden_checklists WHERE orden_id=$1 ORDER BY tipo', [id]);
+    const notas = await pool.query(`SELECT a.*, u.nombre AS autor FROM orden_anotaciones a
+      JOIN usuarios u ON u.id=a.autor_id WHERE a.orden_id=$1 ORDER BY a.created_at DESC, a.id DESC`, [id]);
     return res.json({
-      ot,
+      ot, vehiculo: metadata.rows[0] || {}, checklists: checklists.rows, anotaciones: notas.rows,
       servicios: servicios.rows,
       repuestos: repuestos.rows,
       pagos: pagos.rows,
@@ -577,19 +588,11 @@ router.put("/:id/diagnostico", async (req, res) => {
 
   const diagnostico = String(req.body?.diagnostico || "").trim().slice(0, 2000) || null;
 
-  try {
-    const ot = await getOtIfAllowed(id, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
-      `UPDATE ordenes_trabajo SET diagnostico = $1 WHERE id = $2 RETURNING id, diagnostico`,
-      [diagnostico, id]
-    );
-
-    return res.json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error actualizando diagnóstico", detalle: e.message });
-  }
+  req.auditText = 'Diagnostico actualizado';
+  return modificarOtAbierta(req, res, 'Error actualizando diagnostico', async (client) => {
+    const q = await client.query('UPDATE ordenes_trabajo SET diagnostico=$1 WHERE id=$2 RETURNING id, diagnostico', [diagnostico,id]);
+    return {status:200, body:q.rows[0]};
+  });
 });
 
 // =========================
@@ -600,344 +603,122 @@ function fotoUrl(ruta) {
   return `${base}/uploads/${ruta}`;
 }
 
-router.post("/:id/fotos", subirFotosMiddleware, async (req, res) => {
-  const ordenId = Number(req.params.id);
-  const tipo = String(req.body?.tipo || "").trim();
-
-  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
-  if (!["ingreso", "entrega"].includes(tipo)) {
-    return res.status(400).json({ error: "tipo debe ser 'ingreso' o 'entrega'" });
-  }
-
+async function documento(req,res,resolve,canAppendDelivery,operation) {
+  const client=await pool.connect();
   try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) {
-      borrarArchivosSubidos(req.files);
-      return res.status(404).json({ error: "OT no encontrada" });
+    await client.query('BEGIN');
+    const entity=await resolve(client);
+    if(!entity) {await client.query('ROLLBACK');borrarArchivosSubidos(req.files);return res.status(404).json({error:'Documento no encontrado'});}
+    const q=await client.query(`SELECT * FROM ordenes_trabajo WHERE id=$1
+      AND ($2::text='superuser' OR mechanic_id=$3) FOR UPDATE`,[entity.orden_id,req.user.role,req.user.id]);
+    if(!q.rowCount) {await client.query('ROLLBACK');borrarArchivosSubidos(req.files);return res.status(404).json({error:'Orden no encontrada'});}
+    if(q.rows[0].estado==='ENTREGADO' && !(canAppendDelivery && entity.tipo==='entrega')) {
+      await client.query('ROLLBACK');borrarArchivosSubidos(req.files);
+      return res.status(409).json({error:'El documento quedo cerrado al entregar. Agrega una anotacion fechada.'});
     }
-
-    const files = req.files || [];
-    if (files.length === 0) {
-      return res.status(400).json({ error: "No se recibió ninguna foto" });
+    const result=await operation(client,entity);
+    if(result.status>=400) {await client.query('ROLLBACK');borrarArchivosSubidos(req.files);}
+    else {
+      const route=req.route.path;
+      const kind=route.includes('actualizaciones')?(route.includes('fotos')?'fotografía de un avance':'avance del trabajo'):
+        route.includes('danos')?(route.includes('fotos')?'fotografía de un daño':'daño de la inspección'):'fotografía del vehículo';
+      const action=req.method==='DELETE'?'Se eliminó':req.method==='PUT'?'Se actualizó':'Se registró';
+      await client.query(`INSERT INTO orden_anotaciones (orden_id,autor_id,clase,texto) VALUES ($1,$2,'EVENTO',$3)`,
+        [entity.orden_id,req.user.id,req.auditText || `${action} ${kind}${entity.tipo ? ` · ${entity.tipo}` : ''}`]);
+      await client.query('COMMIT');
+      for(const file of result.remove || [])fs.unlink(path.join(UPLOAD_DIR,file),()=>{});
     }
+    return res.status(result.status).json(result.body);
+  } catch(e) {await client.query('ROLLBACK');borrarArchivosSubidos(req.files);return res.status(500).json({error:'No se pudo guardar el documento'});}
+  finally {client.release();}
+}
+const rootDocument=(req,tipo)=>async()=>({orden_id:Number(req.params.id),tipo});
+const childDocument=(sql,id)=>async client=>(await client.query(sql,[Number(id)])).rows[0];
+const bad=(res,message)=>res.status(400).json({error:message});
 
-    const inserted = [];
-    for (const file of files) {
-      const relPath = `ot_${ordenId}/${file.filename}`;
-      const q = await pool.query(
-        `INSERT INTO orden_fotos (orden_id, tipo, ruta)
-         VALUES ($1, $2, $3)
-         RETURNING id, tipo, ruta, created_at`,
-        [ordenId, tipo, relPath]
-      );
-      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
+router.post('/:id/fotos',subirFotosMiddleware,(req,res)=>{
+  const tipo=req.body.tipo;
+  if(!['ingreso','entrega'].includes(tipo)) {borrarArchivosSubidos(req.files);return bad(res,'Tipo de foto invalido');}
+  return documento(req,res,rootDocument(req,tipo),true,async(client,entity)=>{
+    if(!req.files?.length)return {status:400,body:{error:'Selecciona una foto'}};
+    const rows=[];
+    for(const f of req.files) {
+      const ruta=`ot_${entity.orden_id}/${f.filename}`;
+      const q=await client.query('INSERT INTO orden_fotos (orden_id,tipo,ruta) VALUES ($1,$2,$3) RETURNING *',[entity.orden_id,tipo,ruta]);
+      rows.push({...q.rows[0],url:fotoUrl(ruta)});
     }
-
-    return res.status(201).json(inserted);
-  } catch (e) {
-    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
-  }
+    return {status:201,body:rows};
+  });
 });
-
-router.delete("/fotos/:fotoId", async (req, res) => {
-  const fotoId = Number(req.params.fotoId);
-  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const f = await pool.query(
-      `SELECT f.id, f.ruta, f.orden_id
-       FROM orden_fotos f
-       JOIN ordenes_trabajo o ON o.id = f.orden_id
-       WHERE f.id = $1`,
-      [fotoId]
-    );
-    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
-
-    const allowed = await getOtIfAllowed(f.rows[0].orden_id, req.user);
-    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
-
-    await pool.query(`DELETE FROM orden_fotos WHERE id = $1`, [fotoId]);
-
-    const fullPath = path.join(UPLOAD_DIR, f.rows[0].ruta);
-    fs.unlink(fullPath, () => {}); // best-effort, no bloquea la respuesta
-
-    return res.json({ mensaje: "Foto eliminada" });
-  } catch (e) {
-    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
-  }
+router.delete('/fotos/:fotoId',(req,res)=>documento(req,res,
+  childDocument('SELECT * FROM orden_fotos WHERE id=$1',req.params.fotoId),false,async(client,f)=>{
+    await client.query('DELETE FROM orden_fotos WHERE id=$1',[f.id]);
+    return {status:200,body:{mensaje:'Foto eliminada'},remove:[f.ruta]};
+  }));
+router.post('/:id/danos',(req,res)=>{
+  const b=req.body,tipo=b.tipo || 'ingreso';
+  if(!VISTAS_VALIDAS.has(b.vista) || !TIPOS_DANO_VALIDOS.has(tipo) || !String(b.zona||'').trim())return bad(res,'Vista, zona o etapa invalida');
+  return documento(req,res,rootDocument(req,tipo),true,async(client,entity)=>{
+    const q=await client.query(`INSERT INTO orden_danos (orden_id,tipo,vista,zona,estado_dano,tipo_reparacion,observaciones)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[entity.orden_id,tipo,b.vista,String(b.zona).trim().slice(0,160),
+      b.estado_dano?String(b.estado_dano).trim().slice(0,160):null,b.tipo_reparacion?String(b.tipo_reparacion).trim().slice(0,160):null,b.observaciones?String(b.observaciones).trim().slice(0,500):null]);
+    await client.query(`UPDATE orden_checklists SET revision_danos='CON_DANOS',revisado=false WHERE orden_id=$1 AND tipo=$2`,[entity.orden_id,tipo]);
+    return {status:201,body:{...q.rows[0],fotos:[]}};
+  });
 });
-
-// =========================
-// 3c) Inspección de daños: crear / editar / eliminar zona marcada
-// =========================
-router.post("/:id/danos", async (req, res) => {
-  const ordenId = Number(req.params.id);
-  const { vista, zona, tipo, estado_dano, tipo_reparacion, observaciones } = req.body || {};
-
-  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
-  if (!VISTAS_VALIDAS.has(String(vista || ""))) {
-    return res.status(400).json({ error: "vista inválida" });
-  }
-  if (!zona || !String(zona).trim()) {
-    return res.status(400).json({ error: "zona es obligatoria" });
-  }
-  const tipoDano = tipo ? String(tipo) : "ingreso";
-  if (!TIPOS_DANO_VALIDOS.has(tipoDano)) {
-    return res.status(400).json({ error: "tipo inválido (ingreso o entrega)" });
-  }
-
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
-      `INSERT INTO orden_danos (orden_id, tipo, vista, zona, estado_dano, tipo_reparacion, observaciones)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        ordenId, tipoDano, vista, String(zona).trim(),
-        estado_dano ? String(estado_dano).trim() : null,
-        tipo_reparacion ? String(tipo_reparacion).trim() : null,
-        observaciones ? String(observaciones).trim().slice(0, 500) : null,
-      ]
-    );
-
-    return res.status(201).json({ ...q.rows[0], fotos: [] });
-  } catch (e) {
-    return res.status(500).json({ error: "Error agregando daño", detalle: e.message });
-  }
+router.put('/danos/:danoId',(req,res)=>{
+  const b=req.body;
+  if(b.tipo!==undefined && !TIPOS_DANO_VALIDOS.has(b.tipo))return bad(res,'Etapa invalida');
+  return documento(req,res,childDocument('SELECT * FROM orden_danos WHERE id=$1',req.params.danoId),false,async(client,d)=>{
+    const values=[d.id],sets=[];
+    for(const col of ['tipo','estado_dano','tipo_reparacion','observaciones'])if(b[col]!==undefined){values.push(String(b[col]||'').trim().slice(0,col==='observaciones'?500:160)||null);sets.push(`${col}=$${values.length}`);}
+    if(!sets.length)return {status:400,body:{error:'No hay campos para actualizar'}};
+    const q=await client.query(`UPDATE orden_danos SET ${sets.join(',')} WHERE id=$1 RETURNING *`,values);
+    await client.query(`UPDATE orden_checklists SET revisado=false,revision_danos='PENDIENTE' WHERE orden_id=$1`,[d.orden_id]);
+    return {status:200,body:q.rows[0]};
+  });
 });
-
-router.put("/danos/:danoId", async (req, res) => {
-  const danoId = Number(req.params.danoId);
-  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
-
-  const b = req.body || {};
-  const estadoDano = b.estado_dano === undefined
-    ? undefined : (String(b.estado_dano || "").trim() || null);
-  const tipoReparacion = b.tipo_reparacion === undefined
-    ? undefined : (String(b.tipo_reparacion || "").trim() || null);
-  const observaciones = b.observaciones === undefined
-    ? undefined : (String(b.observaciones || "").trim().slice(0, 500) || null);
-  const tipo = b.tipo === undefined ? undefined : String(b.tipo || "");
-
-  if (tipo !== undefined && !TIPOS_DANO_VALIDOS.has(tipo)) {
-    return res.status(400).json({ error: "tipo inválido (ingreso o entrega)" });
-  }
-
-  const sets = [];
-  const params = [];
-  let idx = 1;
-  function addSet(col, val) { sets.push(`${col} = $${idx++}`); params.push(val); }
-
-  if (estadoDano !== undefined) addSet("estado_dano", estadoDano);
-  if (tipoReparacion !== undefined) addSet("tipo_reparacion", tipoReparacion);
-  if (observaciones !== undefined) addSet("observaciones", observaciones);
-  if (tipo !== undefined) addSet("tipo", tipo);
-
-  if (sets.length === 0) {
-    return res.status(400).json({ error: "No hay campos para actualizar" });
-  }
-
-  try {
-    const dano = await getDanoIfAllowed(danoId, req.user);
-    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
-
-    params.push(danoId);
-    const q = await pool.query(
-      `UPDATE orden_danos SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
-      params
-    );
-
-    return res.json(q.rows[0]);
-  } catch (e) {
-    return res.status(500).json({ error: "Error actualizando daño", detalle: e.message });
-  }
-});
-
-router.delete("/danos/:danoId", async (req, res) => {
-  const danoId = Number(req.params.danoId);
-  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const dano = await getDanoIfAllowed(danoId, req.user);
-    if (!dano) return res.status(404).json({ error: "Daño no encontrado" });
-
-    const fotosRes = await pool.query(
-      `SELECT ruta FROM orden_dano_fotos WHERE dano_id = $1`, [danoId]);
-
-    await pool.query(`DELETE FROM orden_danos WHERE id = $1`, [danoId]);
-
-    for (const f of fotosRes.rows) {
-      fs.unlink(path.join(UPLOAD_DIR, f.ruta), () => {});
-    }
-
-    return res.json({ mensaje: "Daño eliminado" });
-  } catch (e) {
-    return res.status(500).json({ error: "Error eliminando daño", detalle: e.message });
-  }
-});
-
-router.post("/danos/:danoId/fotos", subirDanoFotosMiddleware, async (req, res) => {
-  const danoId = Number(req.params.danoId);
-  if (!Number.isFinite(danoId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const dano = await getDanoIfAllowed(danoId, req.user);
-    if (!dano) {
-      borrarArchivosSubidos(req.files);
-      return res.status(404).json({ error: "Daño no encontrado" });
-    }
-
-    const files = req.files || [];
-    if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });
-
-    const inserted = [];
-    for (const file of files) {
-      const relPath = `dano_${danoId}/${file.filename}`;
-      const q = await pool.query(
-        `INSERT INTO orden_dano_fotos (dano_id, ruta)
-         VALUES ($1, $2)
-         RETURNING id, dano_id, ruta, created_at`,
-        [danoId, relPath]
-      );
-      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
-    }
-
-    return res.status(201).json(inserted);
-  } catch (e) {
-    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
-  }
-});
-
-router.delete("/danos/fotos/:fotoId", async (req, res) => {
-  const fotoId = Number(req.params.fotoId);
-  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const f = await pool.query(
-      `SELECT f.id, f.ruta, f.dano_id
-       FROM orden_dano_fotos f
-       WHERE f.id = $1`,
-      [fotoId]
-    );
-    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
-
-    const allowed = await getDanoIfAllowed(f.rows[0].dano_id, req.user);
-    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
-
-    await pool.query(`DELETE FROM orden_dano_fotos WHERE id = $1`, [fotoId]);
-    fs.unlink(path.join(UPLOAD_DIR, f.rows[0].ruta), () => {});
-
-    return res.json({ mensaje: "Foto eliminada" });
-  } catch (e) {
-    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
-  }
-});
-
-// =========================
-// Actualizaciones de la OT (foto + nota mientras se trabaja)
-// =========================
-router.post("/:id/actualizaciones", async (req, res) => {
-  const ordenId = Number(req.params.id);
-  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
-
-  const nota = req.body?.nota ? String(req.body.nota).trim().slice(0, 1000) : null;
-
-  try {
-    const ot = await getOtIfAllowed(ordenId, req.user);
-    if (!ot) return res.status(404).json({ error: "OT no encontrada" });
-
-    const q = await pool.query(
-      `INSERT INTO orden_actualizaciones (orden_id, nota) VALUES ($1, $2) RETURNING *`,
-      [ordenId, nota]
-    );
-
-    return res.status(201).json({ ...q.rows[0], fotos: [] });
-  } catch (e) {
-    return res.status(500).json({ error: "Error agregando actualización", detalle: e.message });
-  }
-});
-
-router.delete("/actualizaciones/:actId", async (req, res) => {
-  const actId = Number(req.params.actId);
-  if (!Number.isFinite(actId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const act = await getActualizacionIfAllowed(actId, req.user);
-    if (!act) return res.status(404).json({ error: "Actualización no encontrada" });
-
-    const fotosRes = await pool.query(
-      `SELECT ruta FROM orden_actualizacion_fotos WHERE actualizacion_id = $1`, [actId]);
-
-    await pool.query(`DELETE FROM orden_actualizaciones WHERE id = $1`, [actId]);
-
-    for (const f of fotosRes.rows) {
-      fs.unlink(path.join(UPLOAD_DIR, f.ruta), () => {});
-    }
-
-    return res.json({ mensaje: "Actualización eliminada" });
-  } catch (e) {
-    return res.status(500).json({ error: "Error eliminando actualización", detalle: e.message });
-  }
-});
-
-router.post("/actualizaciones/:actId/fotos", subirActualizacionFotosMiddleware, async (req, res) => {
-  const actId = Number(req.params.actId);
-  if (!Number.isFinite(actId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const act = await getActualizacionIfAllowed(actId, req.user);
-    if (!act) {
-      borrarArchivosSubidos(req.files);
-      return res.status(404).json({ error: "Actualización no encontrada" });
-    }
-
-    const files = req.files || [];
-    if (files.length === 0) return res.status(400).json({ error: "No se recibió ninguna foto" });
-
-    const inserted = [];
-    for (const file of files) {
-      const relPath = `actualizacion_${actId}/${file.filename}`;
-      const q = await pool.query(
-        `INSERT INTO orden_actualizacion_fotos (actualizacion_id, ruta)
-         VALUES ($1, $2)
-         RETURNING id, actualizacion_id, ruta, created_at`,
-        [actId, relPath]
-      );
-      inserted.push({ ...q.rows[0], url: fotoUrl(relPath) });
-    }
-
-    return res.status(201).json(inserted);
-  } catch (e) {
-    return res.status(500).json({ error: "Error subiendo fotos", detalle: e.message });
-  }
-});
-
-router.delete("/actualizaciones/fotos/:fotoId", async (req, res) => {
-  const fotoId = Number(req.params.fotoId);
-  if (!Number.isFinite(fotoId)) return res.status(400).json({ error: "id inválido" });
-
-  try {
-    const f = await pool.query(
-      `SELECT f.id, f.ruta, f.actualizacion_id
-       FROM orden_actualizacion_fotos f
-       WHERE f.id = $1`,
-      [fotoId]
-    );
-    if (f.rowCount === 0) return res.status(404).json({ error: "Foto no encontrada" });
-
-    const allowed = await getActualizacionIfAllowed(f.rows[0].actualizacion_id, req.user);
-    if (!allowed) return res.status(404).json({ error: "Foto no encontrada" });
-
-    await pool.query(`DELETE FROM orden_actualizacion_fotos WHERE id = $1`, [fotoId]);
-    fs.unlink(path.join(UPLOAD_DIR, f.rows[0].ruta), () => {});
-
-    return res.json({ mensaje: "Foto eliminada" });
-  } catch (e) {
-    return res.status(500).json({ error: "Error eliminando foto", detalle: e.message });
-  }
-});
+router.delete('/danos/:danoId',(req,res)=>documento(req,res,
+  childDocument('SELECT * FROM orden_danos WHERE id=$1',req.params.danoId),false,async(client,d)=>{
+    const photos=await client.query('SELECT ruta FROM orden_dano_fotos WHERE dano_id=$1',[d.id]);
+    await client.query('DELETE FROM orden_danos WHERE id=$1',[d.id]);
+    await client.query(`UPDATE orden_checklists SET revisado=false,revision_danos='PENDIENTE' WHERE orden_id=$1 AND tipo=$2`,[d.orden_id,d.tipo]);
+    return {status:200,body:{mensaje:'Dano eliminado'},remove:photos.rows.map(f=>f.ruta)};
+  }));
+router.post('/danos/:danoId/fotos',subirDanoFotosMiddleware,(req,res)=>documento(req,res,
+  childDocument('SELECT * FROM orden_danos WHERE id=$1',req.params.danoId),true,async(client,d)=>{
+    if(!req.files?.length)return {status:400,body:{error:'Selecciona una foto'}};
+    const rows=[];
+    for(const f of req.files){const ruta=`dano_${d.id}/${f.filename}`;
+      const q=await client.query('INSERT INTO orden_dano_fotos (dano_id,ruta) VALUES ($1,$2) RETURNING *',[d.id,ruta]);rows.push({...q.rows[0],url:fotoUrl(ruta)});}
+    return {status:201,body:rows};
+  }));
+router.delete('/danos/fotos/:fotoId',(req,res)=>documento(req,res,
+  childDocument('SELECT f.*,d.orden_id,d.tipo FROM orden_dano_fotos f JOIN orden_danos d ON d.id=f.dano_id WHERE f.id=$1',req.params.fotoId),false,async(client,f)=>{
+    await client.query('DELETE FROM orden_dano_fotos WHERE id=$1',[f.id]);return {status:200,body:{mensaje:'Foto eliminada'},remove:[f.ruta]};
+  }));
+router.post('/:id/actualizaciones',(req,res)=>documento(req,res,rootDocument(req,'trabajo'),false,async(client,entity)=>{
+  const nota=String(req.body.nota||'').trim().slice(0,1000)||null;
+  const q=await client.query('INSERT INTO orden_actualizaciones (orden_id,nota) VALUES ($1,$2) RETURNING *',[entity.orden_id,nota]);
+  return {status:201,body:{...q.rows[0],fotos:[]}};
+}));
+router.delete('/actualizaciones/:actId',(req,res)=>documento(req,res,
+  childDocument('SELECT * FROM orden_actualizaciones WHERE id=$1',req.params.actId),false,async(client,a)=>{
+    const photos=await client.query('SELECT ruta FROM orden_actualizacion_fotos WHERE actualizacion_id=$1',[a.id]);
+    await client.query('DELETE FROM orden_actualizaciones WHERE id=$1',[a.id]);
+    return {status:200,body:{mensaje:'Actualizacion eliminada'},remove:photos.rows.map(f=>f.ruta)};
+  }));
+router.post('/actualizaciones/:actId/fotos',subirActualizacionFotosMiddleware,(req,res)=>documento(req,res,
+  childDocument('SELECT * FROM orden_actualizaciones WHERE id=$1',req.params.actId),false,async(client,a)=>{
+    if(!req.files?.length)return {status:400,body:{error:'Selecciona una foto'}};
+    const rows=[];for(const f of req.files){const ruta=`actualizacion_${a.id}/${f.filename}`;
+      const q=await client.query('INSERT INTO orden_actualizacion_fotos (actualizacion_id,ruta) VALUES ($1,$2) RETURNING *',[a.id,ruta]);rows.push({...q.rows[0],url:fotoUrl(ruta)});}
+    return {status:201,body:rows};
+  }));
+router.delete('/actualizaciones/fotos/:fotoId',(req,res)=>documento(req,res,
+  childDocument('SELECT f.*,a.orden_id FROM orden_actualizacion_fotos f JOIN orden_actualizaciones a ON a.id=f.actualizacion_id WHERE f.id=$1',req.params.fotoId),false,async(client,f)=>{
+    await client.query('DELETE FROM orden_actualizacion_fotos WHERE id=$1',[f.id]);return {status:200,body:{mensaje:'Foto eliminada'},remove:[f.ruta]};
+  }));
 
 // =========================
 // 4) Agregar servicio (privado)
@@ -949,8 +730,8 @@ router.post("/:id/servicios", async (req, res) => {
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (!descripcion) return res.status(400).json({ error: "descripcion es obligatoria" });
 
-  const precioNum = Number(precio ?? 0);
-  if (!Number.isFinite(precioNum) || precioNum < 0) {
+  const precioNum = money(precio);
+  if (precioNum === null) {
     return res.status(400).json({ error: "precio inválido" });
   }
 
@@ -976,37 +757,47 @@ router.post("/:id/servicios", async (req, res) => {
 // =========================
 router.post("/:id/repuestos", async (req, res) => {
   const ordenId = Number(req.params.id);
-  const { nombre, cantidad, costoUnitario, precioUnitario } = req.body || {};
+  const { nombre, cantidad, costoUnitario, precioUnitario, inventarioId } = req.body || {};
 
   if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
   if (!nombre) return res.status(400).json({ error: "nombre es obligatorio" });
 
   const cantidadNum = Number(cantidad ?? 1);
-  const costoNum = Number(costoUnitario ?? 0);
-  const precioNum = Number(precioUnitario ?? 0);
-  if (!Number.isFinite(cantidadNum) || cantidadNum <= 0) {
+  const costoNum = money(costoUnitario);
+  const precioNum = money(precioUnitario);
+  if (!Number.isSafeInteger(cantidadNum) || cantidadNum <= 0) {
     return res.status(400).json({ error: "cantidad inválida" });
   }
-  if (!Number.isFinite(costoNum) || costoNum < 0) {
+  if (costoNum === null) {
     return res.status(400).json({ error: "costo unitario inválido" });
   }
-  if (!Number.isFinite(precioNum) || precioNum < 0) {
+  if (precioNum === null) {
     return res.status(400).json({ error: "precio unitario inválido" });
   }
 
   return modificarOtAbierta(req, res, "Error agregando repuesto", async (client) => {
+    let stock = null;
+    if (inventarioId != null) {
+      const item = await client.query(`SELECT * FROM inventario WHERE id=$1 AND activo=true
+        AND ($2::text='superuser' OR mechanic_id=$3) FOR UPDATE`, [Number(inventarioId),req.user.role,req.user.id]);
+      if (!item.rowCount) return {status:404,body:{error:'Repuesto de inventario no encontrado'}};
+      stock=item.rows[0];
+      if (stock.existencias < cantidadNum) return {status:409,body:{error:'Existencias insuficientes'}};
+      await client.query('UPDATE inventario SET existencias=existencias-$1 WHERE id=$2', [cantidadNum,stock.id]);
+      await client.query(`INSERT INTO inventario_movimientos (inventario_id,orden_id,autor_id,cantidad,motivo,operacion_id)
+        VALUES ($1,$2,$3,$4,$5,$6)`, [stock.id,ordenId,req.user.id,-cantidadNum,'Uso en OT',crypto.randomUUID()]);
+    }
     const q = await client.query(
       `INSERT INTO orden_repuestos (orden_id, nombre, cantidad, costo_unitario, precio_unitario)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [ordenId, String(nombre).trim(), cantidadNum, costoNum, precioNum]
+      [ordenId, stock ? stock.nombre : String(nombre).trim(), cantidadNum, stock ? Number(stock.costo) : costoNum, precioNum]
     );
 
+    if (stock) await client.query('UPDATE orden_repuestos SET inventario_id=$1 WHERE id=$2', [stock.id,q.rows[0].id]);
     await recalcularTotales(ordenId, client);
     await recalcularPagoEstado(ordenId, client);
-
     await marcarPendienteSiRecibido(ordenId, client);
-
     return { status: 201, body: q.rows[0] };
   });
 });
@@ -1016,27 +807,25 @@ router.post("/:id/repuestos", async (req, res) => {
 // =========================
 router.post("/:id/pagos", async (req, res) => {
   const ordenId = Number(req.params.id);
-  const { monto, metodo } = req.body || {};
-
-  if (!Number.isFinite(ordenId)) return res.status(400).json({ error: "id inválido" });
-  if (monto == null) return res.status(400).json({ error: "monto es obligatorio" });
-
-  const montoNum = Number(monto);
-  if (!Number.isFinite(montoNum) || montoNum <= 0) {
-    return res.status(400).json({ error: "monto inválido" });
-  }
-
-  return modificarOtAbierta(req, res, "Error registrando pago", async (client) => {
-    const q = await client.query(
-      `INSERT INTO orden_pagos (orden_id, monto, metodo)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [ordenId, montoNum, String(metodo || "EFECTIVO")]
-    );
-
-    await recalcularPagoEstado(ordenId, client);
-
-    return { status: 201, body: q.rows[0] };
+  const {monto, metodo='EFECTIVO', operacionId} = req.body || {};
+  const amount=money(monto);
+  if (!Number.isSafeInteger(ordenId) || amount === null || amount <= 0) return res.status(400).json({error:'Monto o id invalido'});
+  if (!['EFECTIVO','TRANSFERENCIA','TARJETA'].includes(metodo)) return res.status(400).json({error:'Metodo invalido'});
+  if (operacionId != null && (typeof operacionId !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/.test(operacionId))) return res.status(400).json({error:'Identificador de operacion invalido'});
+  req.auditText=`Pago registrado: $${amount.toFixed(2)} (${metodo})`;
+  return modificarOtAbierta(req,res,'Error registrando pago',async client=>{
+    const {total}=await recalcularTotales(ordenId,client);
+    const paid=await getPagado(ordenId,client);
+    if (cents(amount)>cents(total)-cents(paid)) return {status:409,body:{error:'El pago supera el saldo pendiente',saldo:Math.max(0,cents(total)-cents(paid))/100}};
+    const q=await client.query(`INSERT INTO orden_pagos (orden_id,monto,metodo,operacion_id) VALUES ($1,$2,$3,$4) RETURNING *`,[ordenId,amount,metodo,operacionId || null]);
+    await recalcularPagoEstado(ordenId,client);
+    return {status:201,body:q.rows[0]};
+  },async client=>{
+    if (!operacionId) return null;
+    const q=await client.query('SELECT * FROM orden_pagos WHERE orden_id=$1 AND operacion_id=$2',[ordenId,operacionId]);
+    if (!q.rowCount) return null;
+    if (cents(q.rows[0].monto)!==cents(amount) || q.rows[0].metodo!==metodo) return {status:409,body:{error:'La operacion ya se uso con otros datos'}};
+    return {status:201,body:q.rows[0]};
   });
 });
 
@@ -1062,7 +851,7 @@ router.post("/:id/cerrar", async (req, res) => {
 
     const q = await client.query(
       `UPDATE ordenes_trabajo
-       SET estado = 'ENTREGADO',
+       SET estado = 'ENTREGADO', fase='ENTREGADO',
            closed_at = NOW()
        WHERE id = $1
        RETURNING *`,

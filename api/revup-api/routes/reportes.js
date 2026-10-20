@@ -8,6 +8,13 @@ const router = express.Router();
 // Todo este router exige sesión
 router.use(requireAuth);
 
+async function saldoMes(start, mechanicId=null) {
+  const q=await pool.query(`SELECT COALESCE(SUM(GREATEST(ot.total-COALESCE(p.pagado,0),0)),0) AS pendiente
+    FROM ordenes_trabajo ot LEFT JOIN (SELECT orden_id,SUM(monto) AS pagado FROM orden_pagos GROUP BY orden_id) p ON p.orden_id=ot.id
+    WHERE ot.created_at >= $1::date AND ot.created_at < (date_trunc('month',$1::date)+interval '1 month')::date
+    AND ($2::integer IS NULL OR ot.mechanic_id=$2)`,[start,mechanicId]);
+  return Number(q.rows[0].pendiente);
+}
 function normalizeMonth(maybeMonth) {
   let month = String(maybeMonth || "").trim();
 
@@ -17,7 +24,7 @@ function normalizeMonth(maybeMonth) {
     month = `${now.getFullYear()}-${m}`;
   }
 
-  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Number(month.slice(0, 4)) < 1900) return null;
   return month;
 }
 
@@ -123,6 +130,7 @@ router.get("/mi-resumen", async (req, res) => {
 
     return res.json({
       ingresos,
+      pendiente:await saldoMes(start,mechanicId),
       gastos,
       utilidad: ingresos - gastos,
       repuestos_top: repuestosTop.rows,
@@ -405,6 +413,7 @@ router.get("/resumen", requireSuper, async (req, res) => {
 
     return res.json({
       ...q.rows[0],
+      pendiente:await saldoMes(start),
       repuestos_top: repuestosTop.rows,
       danos_por_estado: danosPorEstado.rows,
       actualizaciones_mes: Number(actualizacionesMes.rows[0]?.cantidad || 0),

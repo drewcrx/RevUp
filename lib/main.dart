@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'src/inicio.dart';
+import 'src/inventario_page.dart';
+import 'src/recordatorios_page.dart';
 import 'src/perfil.dart';
 import 'src/vehiculos.dart';
 import 'src/editar_perfil.dart';
@@ -204,6 +206,8 @@ class _MyAppState extends State<MyApp> {
         '/ordenes': (_) => const OrdenesPage(),
         '/nueva_orden': (_) => const NuevaOrdenPage(),
         '/reportes': (_) => const ReportesPage(),
+        '/inventario': (_) => const InventarioPage(),
+        '/recordatorios': (_) => const RecordatoriosPage(),
         '/propietarios': (_) => const PropietariosPage(),
       },
 

@@ -47,14 +47,14 @@ class _ReportesPageState extends State<ReportesPage> {
     return role == 'superuser';
   }
 
-  String _money(dynamic v) { if (v == null) return "0.00"; return v.toString(); }
+  String _money(dynamic v) => (double.tryParse('$v') ?? 0).toStringAsFixed(2);
 
   Future<void> _load() async {
     if (!mounted) return;
     setState(() { loading = true; error = ''; });
     try {
       final month = _monthCtrl.text.trim();
-      if (!RegExp(r'^\d{4}-\d{2}$').hasMatch(month)) {
+      if (!RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(month)) {
         throw Exception("Mes inválido. Usa formato YYYY-MM (ej: 2026-02)");
       }
       isSuper = _isSuperuser();
@@ -75,6 +75,14 @@ class _ReportesPageState extends State<ReportesPage> {
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> _elegirMes() async {
+    final fecha=DateTime.tryParse('${_monthCtrl.text}-01') ?? DateTime.now();
+    final picked=await showDatePicker(context:context,initialDate:fecha,firstDate:DateTime(2000),lastDate:DateTime(2100),helpText:'Selecciona una fecha del mes a consultar');
+    if(picked==null || !mounted)return;
+    _monthCtrl.text='${picked.year}-${picked.month.toString().padLeft(2,'0')}';
+    await _load();
   }
 
   void _onTapRow(Map<String, dynamic> r) {
@@ -262,6 +270,12 @@ class _ReportesPageState extends State<ReportesPage> {
 
       const SizedBox(height: 14),
 
+      const SizedBox(height:14),
+      for(final item in [(label:'Ingresos',value:ingV,color:Colors.greenAccent),(label:'Gastos',value:gasV,color:Colors.orangeAccent),
+        (label:'Saldo por cobrar',value:double.tryParse('${resumen!['pendiente'] ?? resumen!['saldo_pendiente'] ?? 0}') ?? 0,color:_kBlue)])...[
+        Row(children:[Expanded(child:Text(item.label,style:const TextStyle(color:_kWhite,fontSize:11))),Text('\$${item.value.toStringAsFixed(2)}',style:TextStyle(color:item.color,fontSize:11))]),
+        const SizedBox(height:5),LinearProgressIndicator(value:(item.value/[ingV,gasV,item.value,1.0].reduce((a,b)=>a>b?a:b)).clamp(0.0,1.0),color:item.color,backgroundColor:Colors.white10,minHeight:8),const SizedBox(height:10),
+      ],
       // Barra de margen
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text("Margen operativo", style: TextStyle(
@@ -428,7 +442,7 @@ class _ReportesPageState extends State<ReportesPage> {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
 
@@ -487,50 +501,11 @@ class _ReportesPageState extends State<ReportesPage> {
             child: Column(children: [
 
               // ── Selector de mes ──────────────────────────────────────────
-              _card(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                child: Row(children: [
-                  Icon(Icons.calendar_month_rounded, color: _kBlue.withOpacity(0.7), size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _monthCtrl,
-                      style: const TextStyle(
-                        fontFamily: 'Ubuntu', color: _kWhite, fontSize: 14),
-                      decoration: InputDecoration(
-                        hintText: "YYYY-MM  (ej: 2026-02)",
-                        hintStyle: TextStyle(
-                          fontFamily: 'Ubuntu', color: _kWhite.withOpacity(0.25), fontSize: 13),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                      ),
-                      onSubmitted: (_) => loading ? null : _load(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: loading ? null : _load,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2AA0FF), _kBlueDark]),
-                        borderRadius: BorderRadius.circular(9),
-                        boxShadow: [BoxShadow(
-                          color: _kBlue.withOpacity(0.30),
-                          blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: loading
-                          ? const SizedBox(width: 16, height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text("VER", style: TextStyle(
-                              fontFamily: 'Ubuntu', color: Colors.white,
-                              fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 1.5)),
-                    ),
-                  ),
-                ]),
-              ),
+              _card(padding:const EdgeInsets.all(12),child:Row(children:[
+                const Icon(Icons.calendar_month_rounded,color:_kBlue),const SizedBox(width:10),
+                Expanded(child:Text('Mes del reporte: ${_monthCtrl.text}',style:const TextStyle(color:_kWhite))),
+                TextButton(onPressed:loading?null:_elegirMes,child:const Text('Cambiar')),
+              ])),
 
               const SizedBox(height: 12),
 

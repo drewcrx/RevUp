@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
+import 'session.dart';
 import 'orden_model.dart';
 
 // ─── Paleta RevUp ─────────────────────────────────────────────────────────────
@@ -20,6 +21,9 @@ class _OrdenesPageState extends State<OrdenesPage> {
   // ════════════════════════ LÓGICA ORIGINAL INTACTA ════════════════════════ //
   bool loading = true;
   String error = '';
+  String _busqueda='',_estado='TODAS';
+  bool _conSaldo=false;
+  DateTime? _ultima;
   List<OrdenTrabajo> ordenes = [];
 
   @override
@@ -28,8 +32,9 @@ class _OrdenesPageState extends State<OrdenesPage> {
   Future<void> _cargar() async {
     setState(() { loading = true; error = ''; });
     try {
-      final data = await ApiService.obtenerOrdenes(soloMias: true);
+      final data = await ApiService.obtenerOrdenes(soloMias: Session.user?['role']!='superuser');
       ordenes = data.map((e) => OrdenTrabajo.fromMap(e)).toList();
+      _ultima=DateTime.now();
     } catch (e) { error = e.toString(); }
     if (!mounted) return;
     setState(() => loading = false);
@@ -41,6 +46,7 @@ class _OrdenesPageState extends State<OrdenesPage> {
     switch (estado) {
       case 'RECIBIDO':    return _kBlueGlow;
       case 'PENDIENTE':   return Colors.orangeAccent;
+      case 'LISTO': return Colors.lightGreenAccent;
       case 'ENTREGADO':   return Colors.greenAccent;
       default:            return _kWhite;
     }
@@ -50,6 +56,7 @@ class _OrdenesPageState extends State<OrdenesPage> {
     switch (estado) {
       case 'RECIBIDO':    return Icons.inbox_rounded;
       case 'PENDIENTE':   return Icons.build_rounded;
+      case 'LISTO': return Icons.car_repair;
       case 'ENTREGADO':   return Icons.done_all_rounded;
       default:            return Icons.help_outline_rounded;
     }
@@ -59,6 +66,7 @@ class _OrdenesPageState extends State<OrdenesPage> {
   // con el estado del pago (que también puede decir "PENDIENTE").
   String _labelEstado(String estado) {
     switch (estado) {
+      case 'LISTO': return 'LISTO PARA RETIRAR';
       case 'PENDIENTE': return 'EN PROCESO';
       default:          return estado;
     }
@@ -68,7 +76,7 @@ class _OrdenesPageState extends State<OrdenesPage> {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: ThemeData(fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
+      data: ThemeData(brightness:Brightness.dark,colorScheme:const ColorScheme.dark(primary:Color(0xFF1E90FF),surface:Color(0xFF080E1A)),fontFamily: 'Ubuntu', textTheme: const TextTheme().apply(fontFamily: 'Ubuntu')),
       child: Scaffold(
         backgroundColor: _kBg,
 
@@ -191,27 +199,25 @@ class _OrdenesPageState extends State<OrdenesPage> {
 
   // ── Lista ──────────────────────────────────────────────────────────────────
   Widget _listaView() {
-    // Agrupar por estado para un look más organizado (opcional — misma lógica)
-    return RefreshIndicator(
-      onRefresh: _cargar,
-      color: _kBlue,
-      backgroundColor: const Color(0xFF0D1420),
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
-        itemCount: ordenes.length,
-        itemBuilder: (_, i) {
-          // Insertar cabecera de grupo cuando cambia el estado
-          final o = ordenes[i];
-          final prevEstado = i > 0 ? ordenes[i - 1].estado : null;
-          final showHeader = o.estado != prevEstado;
-
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (showHeader) _grupoHeader(o.estado),
-            _ordenCard(o),
-          ]);
-        },
-      ),
-    );
+    final visibles=ordenes.where((o)=>(('${o.placa} ${o.id} ${o.propietario}').toLowerCase().contains(_busqueda.toLowerCase()))
+      && (_estado=='TODAS' || o.estado==_estado) && (!_conSaldo || o.saldo>0)).toList();
+    const estados=['RECIBIDO','PENDIENTE','LISTO','ENTREGADO'];
+    return Column(children:[
+      Padding(padding:const EdgeInsets.fromLTRB(14,12,14,0),child:Column(children:[
+        TextField(key:const Key('buscar-ordenes'),decoration:const InputDecoration(hintText:'Placa, cliente o número de OT',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>_busqueda=v)),
+        const SizedBox(height:10),SingleChildScrollView(scrollDirection:Axis.horizontal,child:Row(children:[
+          for(final estado in ['TODAS',...estados])Padding(padding:const EdgeInsets.only(right:7),child:ChoiceChip(label:Text(estado=='TODAS'?'Todas':_labelEstado(estado)),selected:_estado==estado,onSelected:(_)=>setState(()=>_estado=estado))),
+        ])),
+        Row(children:[FilterChip(label:const Text('Con saldo'),selected:_conSaldo,onSelected:(v)=>setState(()=>_conSaldo=v)),const Spacer(),Text('${visibles.length} órdenes',style:const TextStyle(color:_kWhite,fontSize:11))]),
+        if(_ultima!=null)Align(alignment:Alignment.centerRight,child:Text('Actualizado ${_ultima!.hour.toString().padLeft(2,'0')}:${_ultima!.minute.toString().padLeft(2,'0')}',style:TextStyle(color:_kWhite.withOpacity(.4),fontSize:10))),
+      ])),
+      Expanded(child:RefreshIndicator(onRefresh:_cargar,color:_kBlue,child:ListView(padding:const EdgeInsets.fromLTRB(14,0,14,100),children:[
+        if(visibles.isEmpty)const Padding(padding:EdgeInsets.all(24),child:Text('Sin órdenes para estos filtros',style:TextStyle(color:_kWhite))),
+        for(final estado in estados)if(visibles.any((o)=>o.estado==estado))...[
+          _grupoHeader(estado),...visibles.where((o)=>o.estado==estado).map(_ordenCard),
+        ],
+      ]))),
+    ]);
   }
 
   // Cabecera de grupo de estado
